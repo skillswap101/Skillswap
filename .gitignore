@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# SkillSwap Phase 0 security exclusions
+.env
+.env.*
+serviceaccountkey.json
+*.pem
+*.key
+*.p12
+*.crt
