@@ -1,73 +1,69 @@
-/**
- * Single canonical Firebase Admin SDK initialization.
- *
- * This project previously had THREE separate places initializing Firebase
- * Admin (root firebaseAdmin.ts, a duplicate inline block in server.ts, and
- * a dead/unused server/firebaseAdmin.ts that used require() inside an ESM
- * project and would have crashed if it were ever actually called). This is
- * now the only one. server.ts imports firebaseAuth/firestore from here.
- *
- * Credential resolution order:
- *   1. Environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL,
- *      FIREBASE_PRIVATE_KEY) - use this in production/hosted environments.
- *   2. Local ./serviceaccountkey.json - dev-only fallback. This file must
- *      NEVER be committed or shipped in a distributable zip. It is already
- *      in .gitignore.
- */
-import { cert, getApps, initializeApp, type App, type ServiceAccount } from "firebase-admin/app";
+import { initializeApp, getApps, cert, type App, type ServiceAccount } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __dirname = process.cwd();
 
-let firebaseApp: App | null = null;
-let firebaseAuth: Auth | null = null;
-let firestore: Firestore | null = null;
+let adminApp: App | null = null;
 let initError: string | null = null;
 
 function loadCredential(): ServiceAccount | null {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
+  const projectId =
+    process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  if (privateKey) {
+    privateKey = privateKey.replace(/^"|"$/g, "").replace(/\\n/g, "\n");
+  }
 
   if (projectId && clientEmail && privateKey) {
     return { projectId, clientEmail, privateKey };
   }
 
-  const keyPath = path.join(__dirname, "serviceaccountkey.json");
-  if (existsSync(keyPath)) {
+  const localKeyPath = path.resolve(__dirname, "serviceaccountkey.json");
+  if (existsSync(localKeyPath)) {
     try {
-      const raw = JSON.parse(readFileSync(keyPath, "utf-8"));
-      return raw as ServiceAccount;
-    } catch {
+      const fileContent = readFileSync(localKeyPath, "utf-8");
+      return JSON.parse(fileContent);
+    } catch (e: any) {
+      initError = `Failed to parse serviceaccountkey.json: ${e?.message}`;
       return null;
     }
   }
+
+  initError =
+    "No Firebase Admin credentials found. Set FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env vars, or provide ./serviceaccountkey.json for local dev.";
   return null;
 }
 
 try {
-  if (getApps().length) {
-    firebaseApp = getApps()[0];
+  if (getApps().length > 0) {
+    adminApp = getApps()[0];
   } else {
-    const credential = loadCredential();
-    if (!credential) {
-      throw new Error(
-        "No Firebase Admin credentials found. Set FIREBASE_PROJECT_ID / " +
-        "FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env vars, or provide " +
-        "./serviceaccountkey.json for local dev."
-      );
+    const cred = loadCredential();
+    if (cred) {
+      adminApp = initializeApp({
+        credential: cert(cred),
+        projectId: cred.projectId,
+      });
     }
-    firebaseApp = initializeApp({ credential: cert(credential) });
   }
-  firebaseAuth = getAuth(firebaseApp);
-  firestore = getFirestore(firebaseApp);
 } catch (e: any) {
-  initError = e?.message || String(e);
-  console.error("[firebaseAdmin] FAILED to initialize:", initError);
+  initError = `Firebase Admin initialization threw: ${e?.message}`;
 }
 
-export { firebaseAuth, firestore, initError };
-export default firebaseApp;
+export const firebaseAdmin: App | null = adminApp;
+export const firebaseAuth: Auth | null = adminApp ? getAuth(adminApp) : null;
+export const firestore: Firestore | null = adminApp ? getFirestore(adminApp) : null;
+export const firebaseAdminInitError: string | null = initError;
+
+if (initError) {
+  console.warn(`[firebaseAdmin] FAILED to initialize: ${initError}`);
+} else {
+  console.log(`[firebaseAdmin] Initialized successfully for project: ${adminApp?.options?.projectId || "unknown"}`);
+}
