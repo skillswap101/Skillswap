@@ -110,10 +110,15 @@ service cloud.firestore {
         && request.resource.data.senderId == request.auth.uid
         && validProposalParticipants(request.resource.data);
 
-      allow update: if isParticipant(resource.data)
-        && validProposalParticipants(request.resource.data)
-        && request.resource.data.senderId == resource.data.senderId
-        && request.resource.data.recipientId == resource.data.recipientId;
+      // Previously either participant could freely change a proposal's
+      // status (accepted/declined/etc.) directly via a client write,
+      // completely bypassing the server's /api/proposals/:id/accept and
+      // /api/proposals/:id/decline endpoints - which are what actually
+      // lock escrow and create the resulting session. Confirmed via full
+      // codebase search that nothing in the client writes to an existing
+      // proposal anymore (updateProposalStatusInCloud is dead code,
+      // unused since the Phase 3 rewrite) - so this is safely server-only.
+      allow update: if false;
 
       allow delete: if false;
     }
@@ -122,13 +127,13 @@ service cloud.firestore {
       allow read: if isParticipant(resource.data)
         && validSessionParticipants(resource.data);
 
-      allow create: if isParticipant(request.resource.data)
-        && validSessionParticipants(request.resource.data);
-
-      allow update: if isParticipant(resource.data)
-        && validSessionParticipants(request.resource.data)
-        && request.resource.data.mentorId == resource.data.mentorId
-        && request.resource.data.learnerId == resource.data.learnerId;
+      // Sessions are now created exclusively server-side, inside the
+      // same escrow-locking transaction that accepts a proposal
+      // (server/services/creditsService.ts) - confirmed via full
+      // codebase search that the client never calls addSessionToCloud
+      // anymore. Same reasoning as proposals above: server-only.
+      allow create: if false;
+      allow update: if false;
 
       allow delete: if false;
     }
