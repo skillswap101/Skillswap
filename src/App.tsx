@@ -478,7 +478,7 @@ export default function App() {
     setSkills([newSkill, ...skills]);
     setCurrentUser({
       ...currentUser,
-      skillsOffered: [...currentUser.skillsOffered, newSkill.title],
+      skillsOffered: [...(currentUser.skillsOffered || []), newSkill.title],
     });
     showToast('New skill listing published to community marketplace!');
   };
