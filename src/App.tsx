@@ -176,6 +176,7 @@ export default function App() {
     loading: authLoading,
     error: authError,
     getToken,
+    logout,
   } = useAuth();
 
   const {
@@ -1264,6 +1265,9 @@ export default function App() {
           setCurrentUser((prev) => ({ ...prev, ...updated }));
         }}
         onOpenTermsPrivacy={() => setIsTermsPrivacyOpen(true)}
+        onLogout={() => {
+          logout().catch((err) => console.error('[App] Logout failed:', err));
+        }}
         showToast={showToast}
       />
 
