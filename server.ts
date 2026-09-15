@@ -108,7 +108,7 @@ app.use((req, res, next) => {
     next();
 });
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 // General API rate limit - applies to everything under /api
 const apiLimiter = rateLimit({
@@ -234,6 +234,10 @@ app.post("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: Authenti
     return res.status(500).json({ error: "Cloud persistence failed" });
   }
 });
+
+
+// Production hardening: test/diagnostic routes are disabled unless explicitly enabled.
+const allowOperationalTestRoutes = process.env.ALLOW_OPERATIONAL_TEST_ROUTES === "true";
 
 app.get("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -568,6 +572,7 @@ app.delete('/api/notifications/:id', verifyFirebaseToken, async (req: Authentica
 // another user's (the old client code accepted an arbitrary
 // recipientUserId with no server check at all).
 app.post('/api/notifications/simulate-test-email', verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  if (!allowOperationalTestRoutes && process.env.NODE_ENV === "production") return res.status(404).json({ error: "Not found" });
   try {
     const { category, customSubject } = req.body || {};
     const notification = {
@@ -589,6 +594,7 @@ app.post('/api/notifications/simulate-test-email', verifyFirebaseToken, async (r
 // Also had zero backend before - the "Run Audit" button 404'd every time.
 // This runs a small set of REAL checks (not fabricated pass/fail data).
 app.get('/api/audit/run', verifyFirebaseToken, async (_req: AuthenticatedRequest, res: Response) => {
+  if (!allowOperationalTestRoutes && process.env.NODE_ENV === "production") return res.status(404).json({ error: "Not found" });
   const results: Array<{ id: string; category: string; title: string; status: 'PASS' | 'WARN' | 'FAIL'; detail: string; latencyMs?: number }> = [];
 
   // Firestore connectivity

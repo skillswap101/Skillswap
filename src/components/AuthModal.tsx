@@ -453,7 +453,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 text-center">
-                  Enter 6-Digit Code (Demo: use any 6 digits e.g. 123456)
+                  Enter 6-Digit Code (Enter the verification code sent to you.)
                 </label>
                 <input
                   type="text"
@@ -507,7 +507,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </form>
           )}
 
-          {/* Quick Demo Credentials Footer */}
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 text-center">
             🔐 Secured by Firebase Authentication & Cloud Firestore
           </div>
