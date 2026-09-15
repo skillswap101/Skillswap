@@ -11,5 +11,10 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    server: {
+      allowedHosts: [
+        'skillswap-0919.onrender.com'
+      ],
+    },
   };
 });
