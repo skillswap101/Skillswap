@@ -43,7 +43,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -112,10 +111,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...newProfile,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      });
 
       setUserProfile(newProfile);
-      return newProfile;    } catch (err) {
+      return newProfile;
+    } catch (err) {
       console.error("[AuthContext] Firestore profile sync failed:", err);
       throw err;
     }
@@ -184,12 +184,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       if (isFirebaseConfigured && auth) {
         const cred = await signInWithEmailAndPassword(auth, email, pass);
-        await syncUserToFirestore(cred.user);    } else {
+        await syncUserToFirestore(cred.user);
+      } else {
         throw new Error("Firebase Authentication is not configured.");
       }
     } catch (err: any) {
-      // Never fall back to a local identity when Firebase authentication fails.
-      
       const msg = err.message || "Failed to sign in. Please check your credentials.";
       setError(msg);
       throw err;
@@ -209,25 +208,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (displayName) {
           await updateProfile(cred.user, { displayName });
         }
-        await syncUserToFirestore(cred.user, { name: displayName, ...additionalData });    } else {
+        await syncUserToFirestore(cred.user, { name: displayName, ...additionalData });
+      } else {
         throw new Error("Firebase Authentication is not configured.");
       }
     } catch (err: any) {
-      // Do not create a local/demo identity when Firebase rejects configuration.
-      
       const msg = err.message || "Failed to create account. Please try again.";
       setError(msg);
       throw err;
     }
   };
 
-  // OTP methods.
-  //
-  // IMPORTANT:
-  // This application does not currently have a Firebase phone-auth
-  // verification flow wired into this context. Never pretend an OTP
-  // was sent or verified. Phase 3 therefore fails closed instead of
-  // accepting arbitrary six-digit codes.
   const sendOtp = async (destination: string): Promise<boolean> => {
     const message =
       "Phone OTP verification is not configured yet. Please use email/password authentication.";
@@ -247,7 +238,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!otpState.phoneNumberOrEmail) {
       return false;
     }
-
     return sendOtp(otpState.phoneNumberOrEmail);
   };
 
@@ -275,7 +265,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     setError(null);
-
     try {
       if (isFirebaseConfigured && auth) {
         await signOut(auth);
