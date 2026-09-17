@@ -25,7 +25,7 @@ function normalizePrivateKey(rawKey: string): string {
     } catch {}
   }
 
-  // Strip leading/trailing quotes often added by shell/.env
+  // Strip leading/trailing quotes
   key = key.replace(/^["']|["']$/g, "").trim();
 
   // Replace literal '\n' and '\r\n' strings with real newlines
