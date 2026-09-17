@@ -17,8 +17,21 @@ function loadCredential(): ServiceAccount | null {
     process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
   if (privateKey) {
-    privateKey = privateKey.replace(/^"|"$/g, "").replace(/\\n/g, "\n");
+    // If provided as a Base64 encoded string (no PEM headers, long string):
+    if (!privateKey.includes("-----BEGIN") && privateKey.length > 100) {
+      try {
+        privateKey = Buffer.from(privateKey, "base64").toString("utf-8");
+      } catch (e) {
+        console.warn("[FirebaseAdmin] Failed to decode base64 private key, falling back to raw string");
+      }
+    }
+    // Clean outer quotes and unescape literal \n characters
+    privateKey = privateKey
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .replace(/\\n/g, "\n");
   }
 
   if (projectId && clientEmail && privateKey) {
