@@ -1,0 +1,254 @@
+===== FIREBASE WIRING AUDIT FOR SKILLSWAP =====
+Project: /data/data/com.termux/files/home/skillswap
+
+1. FIREBASE CONFIG + INIT
+./src/services/api.js:2:import { getAuth } from 'firebase/auth';
+./src/services/api.js:9:async function getAuthHeader() {
+./src/services/api.js:10:  const auth = getAuth();
+./src/services/api.js:29:    const headers = await getAuthHeader();
+./src/services/api.js:61:    const headers = await getAuthHeader();
+./src/firebase.ts:1:import { initializeApp, getApps } from "firebase/app";
+./src/firebase.ts:2:import { getAuth, initializeAuth, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from "firebase/auth";
+./src/firebase.ts:18:const firebaseConfig = {
+./src/firebase.ts:27:const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+./src/firebase.ts:35:    return getAuth(app);
+./middleware/auth.js:1:import { initializeApp, getApps, cert } from 'firebase-admin/app';
+./middleware/auth.js:2:import { getAuth } from 'firebase-admin/auth';
+./middleware/auth.js:10:    initializeApp({
+./middleware/auth.js:19:    initializeApp({ projectId });
+./middleware/auth.js:23:const auth = getAuth();
+./firebaseAdmin.ts:1:import { initializeApp, getApps, cert, type App, type ServiceAccount } from "firebase-admin/app";
+./firebaseAdmin.ts:2:import { getAuth, type Auth } from "firebase-admin/auth";
+./firebaseAdmin.ts:3:import { getFirestore, type Firestore } from "firebase-admin/firestore";
+./firebaseAdmin.ts:82:      adminApp = initializeApp({
+./firebaseAdmin.ts:96:export const firebaseAuth: Auth | null = adminApp ? getAuth(adminApp) : null;
+./firebaseAdmin.ts:97:export const firestore: Firestore | null = adminApp ? getFirestore(adminApp) : null;
+
+2. FIREBASE IMPORTS
+./src/hooks/useCloudStateBridge.ts:21:} from 'firebase/firestore';
+./src/services/api.js:2:import { getAuth } from 'firebase/auth';
+./middleware/auth.js:1:import { initializeApp, getApps, cert } from 'firebase-admin/app';
+./middleware/auth.js:2:import { getAuth } from 'firebase-admin/auth';
+./server.ts:2:import { FieldValue } from 'firebase-admin/firestore';
+
+3. FIRESTORE DB CALLS
+./server/services/paymentsService.ts:40:  await firestore.collection("pendingPayments").doc(`${params.gateway}_${params.gatewayRef}`).set({
+./server/services/paymentsService.ts:54:  const ref = firestore.collection("pendingPayments").doc(`${gateway}_${gatewayRef}`);
+./server/services/paymentsService.ts:68:    const userRef = firestore!.collection("users").doc(pending.userId);
+./server/services/paymentsService.ts:75:    tx.set(firestore!.collection("transactions").doc(), {
+./server/services/paymentsService.ts:91:  const ref = firestore.collection("pendingPayments").doc(`${gateway}_${gatewayRef}`);
+./server/services/paymentsService.ts:95:    // doc may not exist - fine, nothing to mark
+./server/services/paymentsService.ts:102:  const snap = await firestore.collection("pendingPayments").doc(`${gateway}_${gatewayRef}`).get();
+./server/services/paymentsService.ts:121:  const snap = await firestore.collection("pendingPayments").doc(`${gateway}_${gatewayRef}`).get();
+./server/services/creditsService.ts:8: * operation checks the CURRENT server-side status of the document before
+./server/services/creditsService.ts:42:  const proposalRef = firestore.collection("proposals").doc(proposalId);
+./server/services/creditsService.ts:43:  const sessionRef = firestore.collection("sessions").doc();
+./server/services/creditsService.ts:44:  const escrowRef = firestore.collection("escrowTransactions").doc();
+./server/services/creditsService.ts:65:      const learnerRef = firestore!.collection("users").doc(learnerId);
+./server/services/creditsService.ts:131:  const proposalRef = firestore.collection("proposals").doc(proposalId);
+./server/services/creditsService.ts:160:  const sessionRef = firestore.collection("sessions").doc(sessionId);
+./server/services/creditsService.ts:180:      const escrowRef = firestore!.collection("escrowTransactions").doc(session.escrowId);
+./server/services/creditsService.ts:185:        const mentorRef = firestore!.collection("users").doc(escrow.mentorId);
+./server/services/creditsService.ts:186:        const learnerRef = firestore!.collection("users").doc(escrow.learnerId);
+./server/services/creditsService.ts:212:  const sessionRef = firestore.collection("sessions").doc(sessionId);
+./server/services/creditsService.ts:227:      const escrowRef = firestore!.collection("escrowTransactions").doc(session.escrowId);
+./server/services/creditsService.ts:232:        const learnerRef = firestore!.collection("users").doc(escrow.learnerId);
+./src/components/CollaborativeWhiteboard.tsx:136:    const a = document.createElement('a');
+./src/components/UnifiedCheckoutModal.tsx:237:            // "virtual handset" where typing any 4-digit PIN and clicking
+./src/components/CodeSandboxRunner.tsx:33:logAction("Search query: 'React'");
+./src/components/CodeSandboxRunner.tsx:34:logAction("Search query: 'React Hooks'");
+./src/components/CodeSandboxRunner.tsx:35:logAction("Search query: 'React Hooks & State'");
+./src/components/AIAssistantDrawer.tsx:33:  const [query, setQuery] = useState('');
+./src/components/AIAssistantDrawer.tsx:50:    const q = textToAsk || query;
+./src/components/AIAssistantDrawer.tsx:181:            value={query}
+./src/components/AIAssistantDrawer.tsx:187:            disabled={loading || !query.trim()}
+./src/components/SkillCertificateModal.tsx:38:    const svgElement = certRef.current?.querySelector('svg');
+./src/components/SkillCertificateModal.tsx:43:    const link = document.createElement('a');
+./src/components/SkillCertificateModal.tsx:46:    document.body.appendChild(link);
+./src/components/SkillCertificateModal.tsx:48:    document.body.removeChild(link);
+./src/components/CalendarSyncModal.tsx:86:    const link = document.createElement('a');
+./src/components/CalendarSyncModal.tsx:89:    document.body.appendChild(link);
+./src/components/CalendarSyncModal.tsx:91:    document.body.removeChild(link);
+./src/hooks/useCloudStateBridge.ts:10:  collection,
+./src/hooks/useCloudStateBridge.ts:11:  doc,
+./src/hooks/useCloudStateBridge.ts:12:  onSnapshot,
+./src/hooks/useCloudStateBridge.ts:13:  query,
+./src/hooks/useCloudStateBridge.ts:14:  where,
+./src/hooks/useCloudStateBridge.ts:15:  setDoc,
+./src/hooks/useCloudStateBridge.ts:16:  getDoc,
+./src/hooks/useCloudStateBridge.ts:17:  deleteDoc,
+./src/hooks/useCloudStateBridge.ts:197:      const skillRef = doc(db, 'skills', skill.id);
+./src/hooks/useCloudStateBridge.ts:202:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:223:      const skillRef = doc(db, 'skills', skillId);
+./src/hooks/useCloudStateBridge.ts:228:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:244:      await deleteDoc(doc(db, 'skills', skillId));
+./src/hooks/useCloudStateBridge.ts:256:      const propRef = doc(db, 'proposals', proposal.id);
+./src/hooks/useCloudStateBridge.ts:258:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:282:        const propRef = doc(db, 'proposals', proposalId);
+./src/hooks/useCloudStateBridge.ts:283:        await setDoc(propRef, { status, updatedAt: new Date().toISOString() }, { merge: true });
+./src/hooks/useCloudStateBridge.ts:297:      const sessRef = doc(db, 'sessions', session.id);
+./src/hooks/useCloudStateBridge.ts:299:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:320:      const sessRef = doc(db, 'sessions', sessionId);
+./src/hooks/useCloudStateBridge.ts:321:      await setDoc(sessRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+./src/hooks/useCloudStateBridge.ts:333:      const msgRef = doc(db, 'messages', message.id);
+./src/hooks/useCloudStateBridge.ts:335:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:355:      const revRef = doc(db, 'reviews', review.id);
+./src/hooks/useCloudStateBridge.ts:356:      await setDoc(
+./src/hooks/useCloudStateBridge.ts:382:          setDoc(
+./src/hooks/useCloudStateBridge.ts:383:            doc(db, 'skills', item.id),
+./src/hooks/useCloudStateBridge.ts:403:          setDoc(
+./src/hooks/useCloudStateBridge.ts:404:            doc(db, 'proposals', item.id),
+./src/hooks/useCloudStateBridge.ts:424:          setDoc(
+./src/hooks/useCloudStateBridge.ts:425:            doc(db, 'sessions', item.id),
+./src/hooks/useCloudStateBridge.ts:446:          setDoc(
+./src/hooks/useCloudStateBridge.ts:447:            doc(db, 'messages', item.id),
+./src/hooks/useCloudStateBridge.ts:467:          setDoc(
+./src/hooks/useCloudStateBridge.ts:468:            doc(db, 'reviews', item.id),
+./src/hooks/useCloudStateBridge.ts:504:        // Previously a one-time getDoc() - meaning any server-side change
+./src/hooks/useCloudStateBridge.ts:505:        // to this user's document (credits released from escrow, credits
+./src/hooks/useCloudStateBridge.ts:508:        // same as every other collection here.
+./src/hooks/useCloudStateBridge.ts:509:        const userRef = doc(db, 'users', uid);
+./src/hooks/useCloudStateBridge.ts:510:        unsubscribers.push(onSnapshot(userRef, (snap) => {
+./src/hooks/useCloudStateBridge.ts:519:        const skillsQuery = query(collection(db, 'skills'));
+./src/hooks/useCloudStateBridge.ts:520:        unsubscribers.push(onSnapshot(skillsQuery, (snapshot) => {
+./src/hooks/useCloudStateBridge.ts:521:          if (!disposed && !snapshot.empty) setSkillsState(snapshot.docs.map((d) => cleanData<Skill>(d)));
+./src/hooks/useCloudStateBridge.ts:525:        // collection with no filter, relying only on per-document security
+./src/hooks/useCloudStateBridge.ts:530:        const proposalsQuery = query(collection(db, 'proposals'), where('participantIds', 'array-contains', uid));
+./src/hooks/useCloudStateBridge.ts:531:        unsubscribers.push(onSnapshot(proposalsQuery, (snapshot) => {
+./src/hooks/useCloudStateBridge.ts:532:          if (!disposed) setProposalsState(snapshot.docs.map((d) => cleanData<SwapProposal>(d)));
+./src/hooks/useCloudStateBridge.ts:535:        const sessionsQuery = query(collection(db, 'sessions'), where('participantIds', 'array-contains', uid));
+./src/hooks/useCloudStateBridge.ts:536:        unsubscribers.push(onSnapshot(sessionsQuery, (snapshot) => {
+./src/hooks/useCloudStateBridge.ts:537:          if (!disposed) setSessionsState(snapshot.docs.map((d) => cleanData<Session>(d)));
+./src/hooks/useCloudStateBridge.ts:540:        const messagesQuery = query(collection(db, 'messages'), where('participantIds', 'array-contains', uid));
+./src/hooks/useCloudStateBridge.ts:541:        unsubscribers.push(onSnapshot(messagesQuery, (snapshot) => {
+./src/hooks/useCloudStateBridge.ts:542:          if (!disposed) setMessagesState(snapshot.docs.map((d) => cleanData<ChatMessage>(d)));
+./src/hooks/useCloudStateBridge.ts:545:        const reviewsQuery = query(collection(db, 'reviews'));
+./src/hooks/useCloudStateBridge.ts:546:        unsubscribers.push(onSnapshot(reviewsQuery, (snapshot) => {
+./src/hooks/useCloudStateBridge.ts:547:          if (!disposed && !snapshot.empty) setReviewsState(snapshot.docs.map((d) => cleanData<Review>(d)));
+./src/App.tsx:3:import { collection, onSnapshot } from "firebase/firestore";
+./src/App.tsx:320:  const handleSearchSubmit = (query: string) => {
+./src/App.tsx:321:    const trimmed = query.trim();
+./src/App.tsx:322:    setSearchQuery(query);
+./src/App.tsx:331:  const handleRemoveRecentSearch = (queryToRemove: string) => {
+./src/App.tsx:332:    setRecentSearches((prev) => prev.filter((q) => q !== queryToRemove));
+./src/App.tsx:339:  const handleSelectRecentSearch = (query: string) => {
+./src/App.tsx:340:    setSearchQuery(query);
+./src/App.tsx:341:    handleSearchSubmit(query);
+./src/App.tsx:413:    // listeners in useCloudStateBridge pick up the new/changed documents
+./src/App.tsx:493:    // session. The updated balance arrives via the user document listener.
+./src/App.tsx:800:                    {recentSearches.map((query) => (
+./src/App.tsx:802:                        key={query}
+./src/App.tsx:804:                          searchQuery.toLowerCase() === query.toLowerCase()
+./src/App.tsx:808:                        onClick={() => handleSelectRecentSearch(query)}
+./src/App.tsx:810:                        <span className="hover:underline">{query}</span>
+./src/App.tsx:815:                            handleRemoveRecentSearch(query);
+./src/App.tsx:818:                          title={`Remove "${query}"`}
+./src/App.tsx:976:                    <p className="text-xs text-slate-400">Try adjusting your search query or selected category filter.</p>
+./src/App.tsx:1124:                anywhere in this project - unlike Session/SwapProposal,
+./src/main.tsx:12:  const el = document.createElement('pre');
+./src/main.tsx:15:  document.body.appendChild(el);
+./src/main.tsx:22:  createRoot(document.getElementById('root')).render(
+./src/lib/calendarExport.ts:54:    const link = document.createElement('a');
+./src/lib/calendarExport.ts:57:    document.body.appendChild(link);
+./src/lib/calendarExport.ts:59:    document.body.removeChild(link);
+./src/lib/api.ts:43:    const query = new URLSearchParams();
+./src/lib/api.ts:44:    if (params?.category) query.set('category', params.category);
+./src/lib/api.ts:45:    if (params?.type) query.set('type', params.type);
+./src/lib/api.ts:46:    if (params?.search) query.set('search', params.search);
+./src/lib/api.ts:48:    const res = await fetch(`/api/listings?${query.toString()}`);
+./src/utils/firebaseEscrow.ts:32:      // Simulate/perform Firestore document write
+./src/utils/WebRTCManager.ts:177:    const canvas = document.createElement('canvas');
+./src/utils/firestoreRepository.ts:2:  addDoc, collection, deleteDoc, doc, getDoc, onSnapshot,
+./src/utils/firestoreRepository.ts:3:  setDoc, updateDoc, query, type DocumentData,
+./src/utils/firestoreRepository.ts:12:  return collection(db, name);
+./src/utils/firestoreRepository.ts:16:  collectionName: CloudCollection, id: string, data: DocumentData,
+./src/utils/firestoreRepository.ts:18:  await setDoc(doc(db, collectionName, id), data, { merge: true });
+./src/utils/firestoreRepository.ts:22:  collectionName: CloudCollection, id: string, data: DocumentData,
+./src/utils/firestoreRepository.ts:24:  await updateDoc(doc(db, collectionName, id), data);
+./src/utils/firestoreRepository.ts:28:  collectionName: CloudCollection, data: DocumentData,
+./src/utils/firestoreRepository.ts:30:  const ref = await addDoc(collection(db, collectionName), data);
+./src/utils/firestoreRepository.ts:34:export async function getCloudDoc(collectionName: CloudCollection, id: string) {
+./src/utils/firestoreRepository.ts:35:  const snap = await getDoc(doc(db, collectionName, id));
+./src/utils/firestoreRepository.ts:40:  collectionName: CloudCollection,
+./src/utils/firestoreRepository.ts:45:  const q = query(collection(db, collectionName), ...constraints);
+./src/utils/firestoreRepository.ts:46:  return onSnapshot(
+./src/utils/firestoreRepository.ts:48:    snap => onData(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Array<T & { id: string }>),
+./src/utils/firestoreRepository.ts:53:export async function removeCloudDoc(collectionName: CloudCollection, id: string) {
+./src/utils/firestoreRepository.ts:54:  await deleteDoc(doc(db, collectionName, id));
+./src/context/ThemeContext.tsx:31:    const root = document.documentElement;
+./src/context/AuthContext.tsx:10:import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+./src/context/AuthContext.tsx:80:      const userRef = doc(db, "users", fbUser.uid);
+./src/context/AuthContext.tsx:81:      const snap = await getDoc(userRef);
+./src/context/AuthContext.tsx:110:      await setDoc(userRef, {
+./src/context/AuthContext.tsx:287:      const userRef = doc(db, "users", currentUser.uid);
+./src/context/AuthContext.tsx:288:      await updateDoc(userRef, {
+./server.ts:164:app.post("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+./server.ts:167:    const collectionName = req.params.collection;
+./server.ts:169:    if (!allowed.has(collectionName) || !id) {
+./server.ts:170:      return res.status(400).json({ error: "Invalid collection or document id" });
+./server.ts:177:    // check the EXISTING document (a user shouldn't be able to overwrite
+./server.ts:178:    // someone else's doc even if they cleverly craft the request body to
+./server.ts:180:    if (collectionName === "users" && id !== uid)
+./server.ts:181:      return res.status(403).json({ error: "User document ownership mismatch" });
+./server.ts:182:    if (collectionName === "skills" && body.userId !== uid)
+./server.ts:184:    if (collectionName === "messages" && body.senderId !== uid)
+./server.ts:186:    if (collectionName === "proposals") {
+./server.ts:194:    if (collectionName === "sessions") {
+./server.ts:202:    if (collectionName === "reviews") {
+./server.ts:211:    // Also check any EXISTING document isn't owned by someone else, for
+./server.ts:212:    // collections where ownership fields aren't always present in the body
+./server.ts:214:    if (["proposals", "sessions", "reviews", "messages"].includes(collectionName)) {
+./server.ts:215:      const existing = await firestore.collection(collectionName).doc(id).get();
+./server.ts:223:          return res.status(403).json({ error: "Not authorized to modify this document" });
+./server.ts:228:    await firestore.collection(collectionName).doc(id).set(
+./server.ts:242:app.get("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+./server.ts:245:    const collectionName = req.params.collection;
+./server.ts:247:    if (!allowed.has(collectionName) || !id)
+./server.ts:248:      return res.status(400).json({ error: "Invalid collection or document id" });
+./server.ts:251:    const snap = await firestore.collection(collectionName).doc(id).get();
+./server.ts:255:    // Previously this returned ANY document to ANY authenticated user who
+./server.ts:265:    const publiclyReadable = collectionName === "skills";
+./server.ts:268:        (collectionName === "users" && id === uid) ||
+./server.ts:273:        return res.status(403).json({ error: "Not authorized to view this document" });
+./server.ts:351:    const { query: userQuery, prompt, context } = req.body || {};
+./server.ts:414:    const ref = firestore.collection("escrowTransactions").doc();
+./server.ts:451:    const roomRef = firestore.collection("webrtcRooms").doc(roomId);
+./server.ts:508:    const snap = await firestore.collection('notifications')
+./server.ts:509:      .where('recipientUserId', '==', req.user!.uid)
+./server.ts:513:    // the where() above would require a composite index to be created in
+./server.ts:514:    // the Firebase console before this query would work at all.
+./server.ts:515:    const docs = snap.docs
+./server.ts:518:    res.json(docs);
+./server.ts:527:    const ref = firestore.collection('notifications').doc(req.params.id);
+./server.ts:542:    const snap = await firestore.collection('notifications')
+./server.ts:543:      .where('recipientUserId', '==', req.user!.uid)
+./server.ts:544:      .where('read', '==', false)
+./server.ts:547:    snap.docs.forEach(d => batch.update(d.ref, { read: true }));
+./server.ts:557:    const ref = firestore.collection('notifications').doc(req.params.id);
+./server.ts:586:    const ref = await firestore.collection('notifications').add(notification);
+./server.ts:603:    await firestore.collection('users').limit(1).get();
+
+4. FIREBASE AUTH CALLS
+./src/components/AuthModal.tsx:34:    signUp,
+./src/components/AuthModal.tsx:126:      await signUp(email, password, displayName);
+./src/components/AuthModal.tsx:164:      await signUp(email, password, displayName, {
+./src/firebase.ts:2:import { getAuth, initializeAuth, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from "firebase/auth";
+./src/firebase.ts:35:    return getAuth(app);
+./src/context/AuthContext.tsx:4:  onAuthStateChanged,
+./src/context/AuthContext.tsx:5:  signInWithEmailAndPassword,
+./src/context/AuthContext.tsx:7:  signOut,
+./src/context/AuthContext.tsx:28:  signUp: (
+./src/context/AuthContext.tsx:137:      unsubscribe = onAuthStateChanged(
+./src/context/AuthContext.tsx:169:      console.warn("[AuthContext] Error setting onAuthStateChanged observer:", e);
+./src/context/AuthContext.tsx:186:        const cred = await signInWithEmailAndPassword(auth, email, pass);
+./src/context/AuthContext.tsx:198:  const signUp = async (
+./src/context/AuthContext.tsx:270:        await signOut(auth);
+./src/context/AuthContext.tsx:317:        signUp,
+./firebaseAdmin.ts:2:import { getAuth, type Auth } from "firebase-admin/auth";
+./firebaseAdmin.ts:96:export const firebaseAuth: Auth | null = adminApp ? getAuth(adminApp) : null;
+
+5. PACKAGE.JSON FIREBASE VERSION
+    "firebase": "^12.17.1",
+    "firebase-admin": "^14.3.0",
+
+===== END OF AUDIT =====
