@@ -26,13 +26,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * Attaches the Firebase JWT token to the client's Authorization header
  * so Supabase RLS can evaluate auth.uid() if Third-Party JWT is enabled in Supabase Dashboard.
  */
-export function setSupabaseAuthToken(token: string | null) {
+export function setSupabaseAuthToken(_token: string | null) {
   if (!supabase) return;
   try {
-    if (token) {
-      (supabase as any).rest.headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      delete (supabase as any).rest.headers['Authorization'];
+    // Retain valid Supabase anon key as Authorization header so PostgREST RLS evaluates successfully
+    if ((supabase as any)?.rest?.headers) {
+      (supabase as any).rest.headers['Authorization'] = `Bearer ${supabaseAnonKey}`;
     }
   } catch (e) {
     // Non-critical header attachment

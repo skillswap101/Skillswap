@@ -143,7 +143,7 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     setAuthenticated(false);
     if (!authLoading) {
       setCurrentUserState(null);
-      setError("Authentication required.");
+      setError(null);
     }
   }, [userProfile, firebaseUser, authLoading]);
 

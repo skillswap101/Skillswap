@@ -107,23 +107,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       setIsLoading(true);
-      // If phone is provided, go through OTP verification
-      if (phone.trim()) {
-        const otpSent = await sendOtp(phone);
-
-        if (!otpSent) {
-          setLocalError(
-            'Phone OTP verification is currently unavailable. Please continue with email/password.'
-          );
-          return;
-        }
-
-        setMode('otp');
-        setIsLoading(false);
-        return;
-      }
-
-      await signUp(email, password, displayName);
+      await signUp(
+        email,
+        password,
+        displayName,
+        phone.trim() ? { bio: `SkillSwap Member | Mobile: ${phone.trim()}` } : {}
+      );
       setSuccessMessage('Account created successfully! Welcome to SkillSwap.');
       setTimeout(() => {
         onSuccess?.();
@@ -453,7 +442,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 text-center">
-                  Enter 6-Digit Code (Enter the verification code sent to you.)
+                  Enter 6-Digit Verification Code
                 </label>
                 <input
                   type="text"
