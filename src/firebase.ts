@@ -1,6 +1,11 @@
 import { initializeApp, getApps } from "firebase/app";
-import { getAuth, initializeAuth, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import {
+  getAuth,
+  initializeAuth,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
+} from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
 const rawApiKey = import.meta.env.VITE_FIREBASE_API_KEY;
@@ -36,9 +41,8 @@ export const auth = (() => {
   }
 })();
 
-export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-});
-export const storage = getStorage(app);
+// Backward compatibility: db is null as database persistence is handled by Supabase Postgres
+export const db = null as any;
 
+export const storage = getStorage(app);
 export default app;

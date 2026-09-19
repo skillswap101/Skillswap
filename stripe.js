@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { authenticateUser } from './middleware/auth.js';
 import { getPackageById } from './server/packageCatalog.js';
 import { createPendingPayment, fulfillPendingPayment } from './server/services/paymentsService.js';
-import { firestore } from './firebaseAdmin.js';
+import { supabase } from './server/supabaseClient.js';
 
 const router = express.Router();
 
@@ -116,9 +116,13 @@ router.post('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }),
       // only retries on non-2xx responses. Now the ledger is only
       // written AFTER fulfillment succeeds, and a failure returns 500 so
       // Stripe retries delivery instead of giving up silently.
-      const eventRef = firestore.collection('stripeEvents').doc(event.id);
-      const alreadyProcessed = await eventRef.get();
-      if (alreadyProcessed.exists) {
+      const { data: alreadyProcessed } = await supabase
+        .from('stripe_events')
+        .select('id')
+        .eq('id', event.id)
+        .maybeSingle();
+
+      if (alreadyProcessed) {
         console.log(`[stripe] Event ${event.id} already processed - skipping`);
         return res.status(200).json({ received: true, duplicate: true });
       }
@@ -130,10 +134,12 @@ router.post('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }),
           : `[stripe] Session ${session.id} already fulfilled or no matching pending payment`
       );
 
-      // Only record as processed once fulfillment has actually completed
-      // (or been correctly recognized as already-fulfilled) without
-      // throwing.
-      await eventRef.set({ type: event.type, sessionId: session.id, processedAt: new Date().toISOString() });
+      await supabase.from('stripe_events').insert({
+        id: event.id,
+        type: event.type,
+        sessionId: session.id,
+        processedAt: new Date().toISOString()
+      });
     } catch (err) {
       console.error('[stripe] Webhook fulfillment error:', err);
       // Non-2xx so Stripe retries delivery - the pending-payment's own

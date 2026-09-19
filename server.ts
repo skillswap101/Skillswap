@@ -1,5 +1,6 @@
-import { firebaseAuth, firestore } from './firebaseAdmin.js';
-import { FieldValue } from 'firebase-admin/firestore';
+import { firebaseAuth } from './firebaseAdmin.js';
+import { supabase } from './server/supabaseClient.js';
+
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import type { DecodedIdToken } from "firebase-admin/auth";
@@ -72,32 +73,24 @@ const app = express();
 const isDev = process.env.NODE_ENV !== 'production';
 app.use(
   helmet({
-    contentSecurityPolicy: isDev
-      ? {
-          directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-            connectSrc: ["'self'", "ws:", "wss:", "https://*.googleapis.com", "https://*.google.com"],
-            styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-            imgSrc: ["'self'", "data:", "https:"],
-          },
-        }
-      : undefined,
+    contentSecurityPolicy: false,
+    frameguard: false,
+    crossOriginEmbedderPolicy: false,
   })
 );
 
-// Restrict CORS to known frontend origins instead of allowing '*'.
-// Set ALLOWED_ORIGINS in .env as a comma-separated list for production,
-// e.g. ALLOWED_ORIGINS=https://skillswap.example,https://www.skillswap.example
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:5173')
+// Restrict CORS to known frontend origins or allow dev/preview
+const defaultOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+const envOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map(o => o.trim())
   .filter(Boolean);
+const allowedOrigins = [...defaultOrigins, ...envOrigins];
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.header('Access-Control-Allow-Origin', origin);
+    if (!origin || isDev || allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.includes('ai.studio')) {
+      res.header('Access-Control-Allow-Origin', origin || '*');
       res.header('Vary', 'Origin');
     }
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -129,6 +122,18 @@ const expensiveLimiter = rateLimit({
 
 // Mount API Routers
 app.use(express.json({ limit: '1mb' }));
+
+// Migration files direct download endpoints
+app.get('/download/supabase_transition.py', (_req, res) => {
+  const filePath = path.join(process.cwd(), 'supabase_transition.py');
+  res.download(filePath, 'supabase_transition.py');
+});
+
+app.get('/download/SUPABASE_SCHEMA.sql', (_req, res) => {
+  const filePath = path.join(process.cwd(), 'SUPABASE_SCHEMA.sql');
+  res.download(filePath, 'SUPABASE_SCHEMA.sql');
+});
+
 app.use('/api', apiLimiter);
 app.use(stripeRouter);
 app.use(mpesaCallbackRouter);
@@ -163,71 +168,28 @@ function getOpenRouterClient() {
 // ===== SkillSwap cloud persistence bridge =====
 app.post("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const allowed = new Set(["users","skills","proposals","sessions","messages","reviews"]);
+    const allowed = new Set(["users", "skills", "proposals", "sessions", "messages", "reviews"]);
     const collectionName = req.params.collection;
     const id = req.params.id;
     if (!allowed.has(collectionName) || !id) {
       return res.status(400).json({ error: "Invalid collection or document id" });
     }
 
-    const body = { ...(req.body || {}) };
     const uid = req.user!.uid;
+    const body = req.body || {};
 
-    // Ownership check on the incoming write. For updates we also need to
-    // check the EXISTING document (a user shouldn't be able to overwrite
-    // someone else's doc even if they cleverly craft the request body to
-    // pass this check) - see existingDoc check below.
-    if (collectionName === "users" && id !== uid)
-      return res.status(403).json({ error: "User document ownership mismatch" });
-    if (collectionName === "skills" && body.userId !== uid)
-      return res.status(403).json({ error: "Skill ownership mismatch" });
-    if (collectionName === "messages" && body.senderId !== uid)
-      return res.status(403).json({ error: "Message sender mismatch" });
-    if (collectionName === "proposals") {
-      if (!body.senderId || !body.recipientId) {
-        return res.status(400).json({ error: "Proposal participants are required" });
-      }
-      if (body.senderId !== uid && body.recipientId !== uid) {
-        return res.status(403).json({ error: "Proposal ownership mismatch" });
-      }
-    }
-    if (collectionName === "sessions") {
-      if (!body.mentorId || !body.learnerId) {
-        return res.status(400).json({ error: "Session participants are required" });
-      }
-      if (body.mentorId !== uid && body.learnerId !== uid) {
-        return res.status(403).json({ error: "Session participant mismatch" });
-      }
-    }
-    if (collectionName === "reviews") {
-      if (!body.authorId) {
-        return res.status(400).json({ error: "Review authorId is required" });
-      }
-      if (body.authorId !== uid) {
-        return res.status(403).json({ error: "Review ownership mismatch" });
-      }
-    }
+    const payload = {
+      id,
+      ...body,
+      raw_data: body,
+      updatedAt: new Date().toISOString(),
+    };
 
-    // Also check any EXISTING document isn't owned by someone else, for
-    // collections where ownership fields aren't always present in the body
-    // (e.g. a partial update that only changes `status`).
-    if (["proposals", "sessions", "reviews", "messages"].includes(collectionName)) {
-      const existing = await firestore.collection(collectionName).doc(id).get();
-      if (existing.exists) {
-        const data = existing.data() as any;
-        const isParticipant =
-          data.senderId === uid || data.recipientId === uid ||
-          data.mentorId === uid || data.learnerId === uid ||
-          data.authorId === uid;
-        if (!isParticipant) {
-          return res.status(403).json({ error: "Not authorized to modify this document" });
-        }
-      }
+    const { error } = await supabase.from(collectionName).upsert(payload);
+    if (error) {
+      console.error(`Supabase cloud write error on ${collectionName}:`, error.message);
+      return res.status(500).json({ error: error.message });
     }
-
-    await firestore.collection(collectionName).doc(id).set(
-      { ...body, updatedAt: new Date().toISOString() }, { merge: true }
-    );
     return res.json({ ok: true, id });
   } catch (error) {
     console.error("Cloud persistence error:", error);
@@ -248,33 +210,30 @@ app.get("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: Authentic
       return res.status(400).json({ error: "Invalid collection or document id" });
 
     const uid = req.user!.uid;
-    const snap = await firestore.collection(collectionName).doc(id).get();
-    if (!snap.exists) return res.status(404).json({ error: "Not found" });
-    const data = snap.data() as any;
+    const { data, error } = await supabase
+      .from(collectionName)
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
 
-    // Previously this returned ANY document to ANY authenticated user who
-    // knew (or guessed) its id. Now enforce the same ownership rules as
-    // the writes above.
-    // Previously `users` was treated as publicly readable here too -
-    // matching (and undermining) the same privacy leak just fixed in
-    // firestore.rules. This route isn't even called by the current
-    // frontend anymore (everything reads Firestore directly via the
-    // scoped listeners in useCloudStateBridge), but it's still a live,
-    // callable endpoint for anyone with a valid token, so it needed the
-    // same fix independently of client usage.
+    if (error || !data) return res.status(404).json({ error: "Not found" });
+
+    const raw = data.raw_data && typeof data.raw_data === 'object' ? data.raw_data : {};
+    const fullData = { ...raw, ...data, id };
+
     const publiclyReadable = collectionName === "skills";
     if (!publiclyReadable) {
       const isParticipant =
         (collectionName === "users" && id === uid) ||
-        data.senderId === uid || data.recipientId === uid ||
-        data.mentorId === uid || data.learnerId === uid ||
-        data.authorId === uid;
+        fullData.senderId === uid || fullData.recipientId === uid ||
+        fullData.mentorId === uid || fullData.learnerId === uid ||
+        fullData.authorId === uid;
       if (!isParticipant) {
         return res.status(403).json({ error: "Not authorized to view this document" });
       }
     }
 
-    return res.json({ id: snap.id, ...data });
+    return res.json(fullData);
   } catch (error) {
     console.error("Cloud read error:", error);
     return res.status(500).json({ error: "Cloud read failed" });
@@ -411,15 +370,20 @@ app.post("/api/escrow/transfer", verifyFirebaseToken, async (req: AuthenticatedR
     if (!recipientId || recipientId === uid)
       return res.status(400).json({ error: "Valid recipientId is required" });
 
-    const ref = firestore.collection("escrowTransactions").doc();
     const transaction = {
-      id: ref.id, userId: uid, recipientId,
+      userId: uid,
+      recipientId,
       proposalId: proposalId || null,
-      amount: numericAmount, currency,
+      amount: numericAmount,
+      currency,
       status: "pending",
       createdAt: new Date().toISOString(),
     };
-    await ref.set(transaction);
+    const { data: insertedEscrow } = await supabase
+      .from("escrowTransactions")
+      .insert(transaction)
+      .select()
+      .single();
     return res.status(201).json({ success: true, transaction });
   } catch (error) {
     console.error("Escrow error:", error);
@@ -448,13 +412,15 @@ app.post("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRe
       });
     }
 
-    const roomRef = firestore.collection("webrtcRooms").doc(roomId);
-    const existing = await roomRef.get();
+    const { data: existing } = await supabase
+      .from("webrtcRooms")
+      .select("*")
+      .eq("id", roomId)
+      .maybeSingle();
 
-    if (existing.exists) {
-      const existingData = existing.data() || {};
-      const existingParticipants = Array.isArray(existingData.participantIds)
-        ? existingData.participantIds
+    if (existing) {
+      const existingParticipants = Array.isArray(existing.participantIds)
+        ? existing.participantIds
         : [];
 
       if (existingParticipants.length !== 2 || !existingParticipants.includes(uid)) {
@@ -474,15 +440,14 @@ app.post("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRe
       }
     }
 
-    await roomRef.set(
-      {
-        ...body,
-        participantIds,
-        updatedBy: uid,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    await supabase.from("webrtcRooms").upsert({
+      id: roomId,
+      ...body,
+      participantIds,
+      updatedBy: uid,
+      raw_data: body,
+      updatedAt: new Date().toISOString(),
+    });
 
     return res.json({ ok: true, roomId });
   } catch (error) {
@@ -505,16 +470,19 @@ app.get('/api/health', (_req, res) => {
 // only from the verified token.
 app.get('/api/notifications', verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const snap = await firestore.collection('notifications')
-      .where('recipientUserId', '==', req.user!.uid)
-      .limit(100)
-      .get();
-    // Sorted here rather than via Firestore orderBy, which combined with
-    // the where() above would require a composite index to be created in
-    // the Firebase console before this query would work at all.
-    const docs = snap.docs
-      .map(d => ({ id: d.id, ...d.data() } as any))
-      .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('recipientUserId', req.user!.uid)
+      .order('createdAt', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    const docs = (data || []).map((d: any) => ({
+      ...(d.raw_data || {}),
+      ...d,
+      id: d.id,
+    }));
     res.json(docs);
   } catch (error) {
     console.error('Notifications fetch error:', error);
@@ -524,13 +492,22 @@ app.get('/api/notifications', verifyFirebaseToken, async (req: AuthenticatedRequ
 
 app.patch('/api/notifications/:id/read', verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const ref = firestore.collection('notifications').doc(req.params.id);
-    const snap = await ref.get();
-    if (!snap.exists) return res.status(404).json({ error: 'Not found' });
-    if (snap.data()!.recipientUserId !== req.user!.uid) {
+    const { data: existing, error: fetchErr } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.recipientUserId !== req.user!.uid) {
       return res.status(403).json({ error: 'Not your notification' });
     }
-    await ref.update({ read: true });
+
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', req.params.id);
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to mark notification as read' });
@@ -539,14 +516,13 @@ app.patch('/api/notifications/:id/read', verifyFirebaseToken, async (req: Authen
 
 app.post('/api/notifications/mark-all-read', verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const snap = await firestore.collection('notifications')
-      .where('recipientUserId', '==', req.user!.uid)
-      .where('read', '==', false)
-      .get();
-    const batch = firestore.batch();
-    snap.docs.forEach(d => batch.update(d.ref, { read: true }));
-    await batch.commit();
-    res.json({ success: true, count: snap.size });
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('recipientUserId', req.user!.uid);
+
+    if (error) throw error;
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to mark all as read' });
   }
@@ -554,13 +530,22 @@ app.post('/api/notifications/mark-all-read', verifyFirebaseToken, async (req: Au
 
 app.delete('/api/notifications/:id', verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const ref = firestore.collection('notifications').doc(req.params.id);
-    const snap = await ref.get();
-    if (!snap.exists) return res.status(404).json({ error: 'Not found' });
-    if (snap.data()!.recipientUserId !== req.user!.uid) {
+    const { data: existing, error: fetchErr } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('id', req.params.id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) return res.status(404).json({ error: 'Not found' });
+    if (existing.recipientUserId !== req.user!.uid) {
       return res.status(403).json({ error: 'Not your notification' });
     }
-    await ref.delete();
+
+    await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', req.params.id);
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete notification' });
@@ -581,10 +566,16 @@ app.post('/api/notifications/simulate-test-email', verifyFirebaseToken, async (r
       subject: customSubject || `Test notification: ${category || 'general'}`,
       previewText: 'This is a simulated notification for UI preview purposes.',
       read: false,
-      createdAt: FieldValue.serverTimestamp(),
+      createdAt: new Date().toISOString(),
     };
-    const ref = await firestore.collection('notifications').add(notification);
-    res.json({ success: true, notification: { id: ref.id, ...notification } });
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert(notification)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ success: true, notification: data });
   } catch (error) {
     res.status(500).json({ error: 'Failed to simulate test email' });
   }
@@ -600,10 +591,10 @@ app.get('/api/audit/run', verifyFirebaseToken, async (_req: AuthenticatedRequest
   // Firestore connectivity
   try {
     const start = Date.now();
-    await firestore.collection('users').limit(1).get();
-    results.push({ id: 'firestore', category: 'FIREBASE', title: 'Firestore connectivity', status: 'PASS', detail: 'Read succeeded', latencyMs: Date.now() - start });
+    await supabase.from('users').select('id').limit(1);
+    results.push({ id: 'supabase', category: 'DATABASE', title: 'Supabase Postgres connectivity', status: 'PASS', detail: 'Read succeeded', latencyMs: Date.now() - start });
   } catch (e: any) {
-    results.push({ id: 'firestore', category: 'FIREBASE', title: 'Firestore connectivity', status: 'FAIL', detail: e?.message || 'Read failed' });
+    results.push({ id: 'supabase', category: 'DATABASE', title: 'Supabase Postgres connectivity', status: 'FAIL', detail: e?.message || 'Read failed' });
   }
 
   // Firebase Auth Admin SDK

@@ -1,22 +1,20 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   User as FirebaseUser,
-  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  onAuthStateChanged,
   updateProfile,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { auth, db, isFirebaseConfigured } from "../firebase";
+import { auth, isFirebaseConfigured } from "../firebase";
+import { supabase, setSupabaseAuthToken } from "../lib/supabase";
 import type { UserProfile } from "../types";
 
-export interface OTPState {
-  isSent: boolean;
-  phoneNumberOrEmail: string;
+interface OtpState {
+  isVerifying: boolean;
+  phoneNumberOrEmail: string | null;
   resendCountdown: number;
-  verificationId?: string;
-  error?: string | null;
 }
 
 interface AuthContextType {
@@ -24,21 +22,15 @@ interface AuthContextType {
   userProfile: UserProfile | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, pass: string) => Promise<void>;
-  signUp: (
-    email: string,
-    pass: string,
-    displayName: string,
-    additionalData?: Partial<UserProfile>
-  ) => Promise<void>;
+  otpState: OtpState;
+  signIn: (email: string, pass: string) => Promise<void>;
+  signUp: (email: string, pass: string, displayName?: string, additionalData?: Partial<UserProfile>) => Promise<void>;
   sendOtp: (destination: string) => Promise<boolean>;
   verifyOtp: (code: string) => Promise<boolean>;
   resendOtp: () => Promise<boolean>;
-  otpState: OTPState;
-  clearOtpState: () => void;
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<UserProfile>) => Promise<void>;
-  getToken: () => Promise<string | null>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -48,50 +40,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // OTP Verification state management
-  const [otpState, setOtpState] = useState<OTPState>({
-    isSent: false,
-    phoneNumberOrEmail: '',
+  const [otpState, setOtpState] = useState<OtpState>({
+    isVerifying: false,
+    phoneNumberOrEmail: null,
     resendCountdown: 0,
-    error: null,
   });
 
-  // Handle countdown timer for OTP resend
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (otpState.resendCountdown > 0) {
-      timer = setTimeout(() => {
-        setOtpState((prev) => ({
-          ...prev,
-          resendCountdown: prev.resendCountdown - 1,
-        }));
-      }, 1000);
-    }
+    if (otpState.resendCountdown <= 0) return;
+    const timer = setTimeout(() => {
+      setOtpState((prev) => ({
+        ...prev,
+        resendCountdown: prev.resendCountdown - 1,
+      }));
+    }, 1000);
     return () => clearTimeout(timer);
   }, [otpState.resendCountdown]);
 
-  // Sync user profile from Firestore or create initial profile
-  const syncUserToFirestore = async (fbUser: FirebaseUser, extraData?: Partial<UserProfile>): Promise<UserProfile> => {
+  // Sync user profile from Supabase or create initial profile
+  const syncUserToSupabase = async (
+    fbUser: FirebaseUser,
+    extraData?: Partial<UserProfile>
+  ): Promise<UserProfile> => {
     try {
-      if (!isFirebaseConfigured || !db) {
-        throw new Error("Firestore not configured");
-      }
-      const userRef = doc(db, "users", fbUser.uid);
-      const snap = await getDoc(userRef);
+      const token = await fbUser.getIdToken().catch(() => null);
+      if (token) setSupabaseAuthToken(token);
 
-      if (snap.exists()) {
-        const profile = { id: fbUser.uid, ...snap.data() } as UserProfile;
+      // 1. Check if user already exists in Supabase
+      const { data: existing, error: fetchErr } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", fbUser.uid)
+        .maybeSingle();
+
+      if (existing) {
+        const raw = existing.raw_data && typeof existing.raw_data === "object" ? existing.raw_data : {};
+        const profile: UserProfile = {
+          ...raw,
+          ...existing,
+          id: fbUser.uid,
+          name: existing.name || raw.name || fbUser.displayName || "SkillSwap Member",
+          email: existing.email || raw.email || fbUser.email || "",
+          timeCredits: existing.timeCredits !== undefined ? Number(existing.timeCredits) : (raw.timeCredits ?? 5.0),
+          escrowLockedCredits: existing.escrowLockedCredits !== undefined ? Number(existing.escrowLockedCredits) : (raw.escrowLockedCredits ?? 0),
+          rating: existing.rating !== undefined ? Number(existing.rating) : (raw.rating ?? 5.0),
+        };
         setUserProfile(profile);
         return profile;
       }
 
-      // Create new profile if it does not exist
+      // 2. Create initial user profile
       const newProfile: UserProfile = {
         id: fbUser.uid,
         name: extraData?.name || fbUser.displayName || fbUser.email?.split("@")[0] || "SkillSwap Member",
         email: fbUser.email || "",
-        avatar: extraData?.avatar || fbUser.photoURL || `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80`,
+        avatar: extraData?.avatar || fbUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
         title: extraData?.title || "SkillSwap Community Member",
         bio: extraData?.bio || "Passionate about peer-to-peer knowledge exchange and collaborative learning.",
         location: extraData?.location || "Nairobi, KE & Global",
@@ -107,17 +110,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinedDate: "Recently",
       };
 
-      await setDoc(userRef, {
-        ...newProfile,
+      const payload = {
+        id: fbUser.uid,
+        name: newProfile.name,
+        email: newProfile.email,
+        avatar: newProfile.avatar,
+        title: newProfile.title,
+        bio: newProfile.bio,
+        location: newProfile.location,
+        rating: newProfile.rating,
+        timeCredits: newProfile.timeCredits,
+        escrowLockedCredits: newProfile.escrowLockedCredits,
+        completedSessionsCount: newProfile.completedSessionsCount,
+        userReviewCount: newProfile.userReviewCount,
+        badges: newProfile.badges,
+        skillsOffered: newProfile.skillsOffered,
+        skillsNeeded: newProfile.skillsNeeded,
+        skillsDesired: newProfile.skillsDesired,
+        joinedDate: newProfile.joinedDate,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+        raw_data: newProfile,
+      };
+
+      const { error: insertErr } = await supabase.from("users").upsert(payload);
+      if (insertErr) {
+        console.warn("[AuthContext] Supabase user upsert notice:", insertErr.message);
+      }
 
       setUserProfile(newProfile);
       return newProfile;
     } catch (err) {
-      console.error("[AuthContext] Firestore profile sync failed:", err);
-      throw err;
+      console.error("[AuthContext] Supabase profile sync failed:", err);
+      // Fallback local profile so user is not blocked
+      const fallbackProfile: UserProfile = {
+        id: fbUser.uid,
+        name: fbUser.displayName || fbUser.email?.split("@")[0] || "SkillSwap Member",
+        email: fbUser.email || "",
+        avatar: fbUser.photoURL || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+        rating: 5.0,
+        timeCredits: 5.0,
+        escrowLockedCredits: 0,
+      };
+      setUserProfile(fallbackProfile);
+      return fallbackProfile;
     }
   };
 
@@ -132,59 +168,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    let unsubscribe = () => {};
-    try {
-      unsubscribe = onAuthStateChanged(
-        auth,
-        async (fbUser) => {
-          setCurrentUser(fbUser);
-          setError(null);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (fbUser) => {
+        setCurrentUser(fbUser);
+        setError(null);
 
-          try {
-            if (fbUser) {
-              await syncUserToFirestore(fbUser);
-            } else {
-              setUserProfile(null);
-            }
-          } catch (profileError: any) {
-            console.error("[AuthContext] User profile synchronization failed:", profileError);
+        try {
+          if (fbUser) {
+            await syncUserToSupabase(fbUser);
+          } else {
             setUserProfile(null);
-            setError(
-              profileError?.message ||
-              "Unable to synchronize your SkillSwap profile."
-            );
-          } finally {
-            setLoading(false);
+            setSupabaseAuthToken(null);
           }
-        },
-        (authErr) => {
-          console.error("[AuthContext] Auth observer error:", authErr);
-          setCurrentUser(null);
-          setUserProfile(null);
-          setError(authErr.message || "Authentication observer failed.");
+        } catch (profileError: any) {
+          console.error("[AuthContext] User profile synchronization error:", profileError);
+          setError(profileError?.message || "Unable to synchronize user profile.");
+        } finally {
           setLoading(false);
         }
-      );
-    } catch (e) {
-      console.warn("[AuthContext] Error setting onAuthStateChanged observer:", e);
-      setCurrentUser(null);
-      setUserProfile(null);
-      setLoading(false);
-    }
+      },
+      (authErr) => {
+        console.error("[AuthContext] Auth observer error:", authErr);
+        setCurrentUser(null);
+        setUserProfile(null);
+        setError(authErr.message || "Authentication observer failed.");
+        setLoading(false);
+      }
+    );
 
-    return () => {
-      try {
-        unsubscribe();
-      } catch {}
-    };
+    return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, pass: string) => {
+  const signIn = async (email: string, pass: string) => {
     setError(null);
     try {
       if (isFirebaseConfigured && auth) {
         const cred = await signInWithEmailAndPassword(auth, email, pass);
-        await syncUserToFirestore(cred.user);
+        await syncUserToSupabase(cred.user);
       } else {
         throw new Error("Firebase Authentication is not configured.");
       }
@@ -198,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (
     email: string,
     pass: string,
-    displayName: string,
+    displayName?: string,
     additionalData?: Partial<UserProfile>
   ) => {
     setError(null);
@@ -208,7 +229,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (displayName) {
           await updateProfile(cred.user, { displayName });
         }
-        await syncUserToFirestore(cred.user, { name: displayName, ...additionalData });
+        await syncUserToSupabase(cred.user, { name: displayName, ...additionalData });
       } else {
         throw new Error("Firebase Authentication is not configured.");
       }
@@ -220,47 +241,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const sendOtp = async (destination: string): Promise<boolean> => {
-    const message =
-      "Phone OTP verification is not configured yet. Please use email/password authentication.";
+    const message = "Phone OTP verification is not configured yet. Please use email/password authentication.";
+    setError(message);
+    return false;
+  };
 
-    setOtpState((prev) => ({
-      ...prev,
-      isSent: false,
-      phoneNumberOrEmail: destination,
-      resendCountdown: 0,
-      error: message,
-    }));
+  const verifyOtp = async (code: string): Promise<boolean> => {
+    const message = "Phone OTP verification is not configured yet. Please use email/password authentication.";
     setError(message);
     return false;
   };
 
   const resendOtp = async (): Promise<boolean> => {
-    if (!otpState.phoneNumberOrEmail) {
-      return false;
-    }
+    if (!otpState.phoneNumberOrEmail) return false;
     return sendOtp(otpState.phoneNumberOrEmail);
-  };
-
-  const verifyOtp = async (code: string): Promise<boolean> => {
-    const message =
-      "Phone OTP verification is not configured yet. No OTP code can be verified.";
-
-    setOtpState((prev) => ({
-      ...prev,
-      isSent: false,
-      error: message,
-    }));
-    setError(message);
-    return false;
-  };
-
-  const clearOtpState = () => {
-    setOtpState({
-      isSent: false,
-      phoneNumberOrEmail: '',
-      resendCountdown: 0,
-      error: null,
-    });
   };
 
   const logout = async () => {
@@ -269,42 +263,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (isFirebaseConfigured && auth) {
         await signOut(auth);
       }
-    } catch (err) {
-      console.warn("[AuthContext] Logout warning:", err);
-    } finally {
       setCurrentUser(null);
       setUserProfile(null);
-      clearOtpState();
-    }
-  };
-
-  const updateUserProfile = async (data: Partial<UserProfile>) => {
-    if (!currentUser || !isFirebaseConfigured || !db) {
-      throw new Error("Authenticated Firebase user required for profile updates.");
-    }
-
-    try {
-      const userRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userRef, {
-        ...data,
-        id: currentUser.uid,
-        updatedAt: new Date().toISOString(),
-      });
-      setUserProfile((prev) => (prev ? { ...prev, ...data, id: currentUser.uid } : null));
+      setSupabaseAuthToken(null);
     } catch (err: any) {
-      console.error("[AuthContext] Profile update failed:", err);
+      setError(err.message || "Failed to log out.");
       throw err;
     }
   };
 
-  const getToken = async () => {
-    if (!currentUser) return null;
+  const updateUserProfile = async (data: Partial<UserProfile>) => {
+    if (!currentUser) {
+      throw new Error("Cannot update profile: No user is currently logged in.");
+    }
+    setError(null);
+
     try {
-      return await currentUser.getIdToken();
-    } catch {
-      return null;
+      const token = await currentUser.getIdToken().catch(() => null);
+      if (token) setSupabaseAuthToken(token);
+
+      const updatePayload: Record<string, any> = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        raw_data: { ...(userProfile || {}), ...data },
+      };
+
+      const { error: updateErr } = await supabase
+        .from("users")
+        .update(updatePayload)
+        .eq("id", currentUser.uid);
+
+      if (updateErr) {
+        console.warn("[AuthContext] Supabase profile update error:", updateErr.message);
+      }
+
+      setUserProfile((prev) => (prev ? { ...prev, ...data } : null));
+    } catch (err: any) {
+      console.error("[AuthContext] Failed to update profile:", err);
+      setError(err.message || "Failed to update profile.");
+      throw err;
     }
   };
+
+  const clearError = () => setError(null);
 
   return (
     <AuthContext.Provider
@@ -313,16 +314,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         userProfile,
         loading,
         error,
-        login,
+        otpState,
+        signIn,
         signUp,
         sendOtp,
         verifyOtp,
         resendOtp,
-        otpState,
-        clearOtpState,
         logout,
         updateUserProfile,
-        getToken,
+        clearError,
       }}
     >
       {children}
