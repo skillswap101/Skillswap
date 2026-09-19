@@ -241,7 +241,7 @@ export const PeerRatingsChart: React.FC<PeerRatingsChartProps> = ({ reviews = []
                   </div>
                   <span className="px-2 py-0.5 bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0">
                     <Star className="w-3 h-3 fill-current text-amber-400" />
-                    {rev.rating.toFixed(1)}
+                    {(rev.rating ?? 0).toFixed(1)}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed italic">"{rev.comment}"</p>

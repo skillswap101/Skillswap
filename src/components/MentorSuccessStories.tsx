@@ -254,7 +254,7 @@ export const MentorSuccessStories: React.FC = () => {
               <div className="flex items-center gap-4 text-xs font-bold text-slate-300 font-mono">
                 <span className="flex items-center gap-1 text-amber-400">
                   <Star className="w-4 h-4 fill-amber-400" />
-                  {story.rating.toFixed(1)}
+                  {(story.rating ?? 0).toFixed(1)}
                 </span>
                 <span className="flex items-center gap-1 text-indigo-400">
                   <Clock className="w-4 h-4" />

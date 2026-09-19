@@ -15,7 +15,8 @@ import {
   Upload, 
   Clock, 
   Sparkles,
-  Link as LinkIcon
+  Link as LinkIcon,
+  LogOut
 } from 'lucide-react';
 import { User as UserType } from '../types';
 
@@ -25,6 +26,7 @@ interface SettingsHubModalProps {
   currentUser: UserType;
   onUpdateUser: (updated: Partial<UserType>) => void;
   onOpenTermsPrivacy: () => void;
+  onLogout: () => void;
   showToast: (msg: string) => void;
 }
 
@@ -34,6 +36,7 @@ export const SettingsHubModal: React.FC<SettingsHubModalProps> = ({
   currentUser,
   onUpdateUser,
   onOpenTermsPrivacy,
+  onLogout,
   showToast,
 }) => {
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar || '');
@@ -216,6 +219,27 @@ export const SettingsHubModal: React.FC<SettingsHubModalProps> = ({
               className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer shadow"
             >
               Read Policies
+            </button>
+          </div>
+
+          {/* Log Out */}
+          <div className="p-4 bg-rose-950/30 border border-rose-500/30 rounded-2xl flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                <LogOut className="w-4 h-4 text-rose-400" />
+                <span>Log Out</span>
+              </p>
+              <p className="text-[10px] text-slate-300">Sign out of your SkillSwap account on this device</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onLogout();
+              }}
+              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer shadow"
+            >
+              Log Out
             </button>
           </div>
 

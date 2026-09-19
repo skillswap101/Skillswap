@@ -1,20 +1,17 @@
 # SkillSwap 5.0 — Production Repair Report
 
-Run: 20260915-173506
-Project: `/data/data/com.termux/files/home/skillswap`
+Run: 20260915-142501
+Project: `/app/applet`
 
 ## Result
 The script applied conservative source-level production hardening.
 
 ## Backup
-`/data/data/com.termux/files/home/skillswap.backup-production-20260915-173506`
+`/app/applet.backup-production-20260915-142501`
 
 ## Changes
-- .env.example sanitized (11 credential values replaced)
-- serviceaccountkey.json quarantined outside project backup
-- Made server PORT environment-driven
+- .env.example sanitized (12 credential values replaced)
 - Added production guard to operational/test routes (2 route(s))
-- Removed/reworded demo auth UI (2 change(s))
 - Added production warning to demo certificate data
 - Flagged/reworked legacy API base configuration
 - Created PRODUCTION_GO_LIVE_CHECKLIST.md and validation helper

@@ -11,7 +11,7 @@ const supabaseKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_ANON_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
-  'process.env.SUPABASE_SERVICE_ROLE_KEY || ""';
+  'sb_secret_CCxX4-J_eI5vDlWdd-SSvA_nfSJIXU4';
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("❌ Missing SUPABASE_URL or Supabase API Key in environment variables!");

@@ -51,8 +51,8 @@ export const SuggestedForYouSection: React.FC<SuggestedForYouSectionProps> = ({
 
   // AI Matching Algorithm to compute recommendations based on user roadmap & skillsDesired
   const recommendedItems = useMemo<RecommendedSkillItem[]>(() => {
-    const userDesired = currentUser.skillsDesired.map((s) => s.toLowerCase());
-    const userOffered = currentUser.skillsOffered.map((s) => s.toLowerCase());
+    const userDesired = (currentUser.skillsDesired || []).map((s) => s.toLowerCase());
+    const userOffered = (currentUser.skillsOffered || []).map((s) => s.toLowerCase());
 
     const otherSkills = skills.filter((s) => s.userId !== currentUser.id);
 
@@ -86,7 +86,7 @@ export const SuggestedForYouSection: React.FC<SuggestedForYouSectionProps> = ({
       if (wantsUserSkill) {
         score += 15;
         if (!roadmapMatch) {
-          reason = `High Swap Compatibility: Mentor wants your ${currentUser.skillsOffered[0]} skills!`;
+          reason = `High Swap Compatibility: Mentor wants your ${(currentUser.skillsOffered || [])[0]} skills!`;
           badgeType = 'trending';
         }
         matchingTopics.push('Reciprocal Swap Match');
@@ -144,7 +144,7 @@ export const SuggestedForYouSection: React.FC<SuggestedForYouSectionProps> = ({
             <BrainCircuit className="w-5 h-5 text-indigo-400" />
           </h2>
           <p className="text-xs text-slate-300">
-            Tailored skill recommendations aligned with your learning roadmap ({currentUser.skillsDesired.join(', ')}) & past interests.
+            Tailored skill recommendations aligned with your learning roadmap ({(currentUser.skillsDesired || []).join(', ')}) & past interests.
           </p>
         </div>
 

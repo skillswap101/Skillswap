@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { EmailNotification, UserProfile } from '../types';
 import { api } from '../lib/api';
+import DOMPurify from 'dompurify';
 
 interface EmailNotificationsModalProps {
   isOpen: boolean;
@@ -45,7 +46,7 @@ export const EmailNotificationsModal: React.FC<EmailNotificationsModalProps> = (
   const fetchEmails = async () => {
     setIsLoading(true);
     try {
-      const data = await api.getNotifications(currentUser.id);
+      const data = await api.getNotifications();
       setNotifications(data);
       if (data.length > 0 && !selectedEmail) {
         setSelectedEmail(data[0]);
@@ -79,7 +80,7 @@ export const EmailNotificationsModal: React.FC<EmailNotificationsModalProps> = (
 
   const handleMarkAllRead = async () => {
     try {
-      await api.markAllNotificationsRead(currentUser.id);
+      await api.markAllNotificationsRead();
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     } catch (err) {
       console.error('Failed to mark all read:', err);
@@ -105,18 +106,15 @@ export const EmailNotificationsModal: React.FC<EmailNotificationsModalProps> = (
     try {
       if (type === 'proposal') {
         await api.simulateTestEmail({
-          recipientUserId: currentUser.id,
           category: 'proposal_received',
         });
       } else if (type === 'status_change') {
         await api.simulateTestEmail({
-          recipientUserId: currentUser.id,
           category: 'session_scheduled',
           customSubject: '🔄 Contract Status Transition: Escrow Verified & Ready for Live Session',
         });
       } else {
         await api.simulateTestEmail({
-          recipientUserId: currentUser.id,
           category: 'credits_purchased',
           customSubject: '💳 Wallet Top-Up Notice: +3.0 Hours Time Credit Deposit',
         });
@@ -390,7 +388,13 @@ export const EmailNotificationsModal: React.FC<EmailNotificationsModalProps> = (
                 <div className="flex-1 p-6 overflow-y-auto bg-slate-950 flex items-start justify-center">
                   <div
                     className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl"
-                    dangerouslySetInnerHTML={{ __html: selectedEmail.htmlBody }}
+                    // Previously rendered raw, unsanitized HTML - a real
+                    // XSS vector if this field ever contains
+                    // attacker-influenced content (e.g. a future feature
+                    // that builds a notification from user-submitted
+                    // text). Sanitized regardless of what currently
+                    // populates it.
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedEmail.htmlBody || '') }}
                   />
                 </div>
               </div>

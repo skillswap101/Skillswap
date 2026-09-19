@@ -6,20 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  setDoc,
-  getDoc,
-  deleteDoc,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-  type Unsubscribe,
-} from 'firebase/firestore';
-
-import { db, isFirebaseConfigured } from '../firebase';
+import { supabase, isSupabaseConfigured, setSupabaseAuthToken } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import {
   INITIAL_SKILLS,
@@ -28,7 +15,6 @@ import {
   INITIAL_MESSAGES,
   INITIAL_REVIEWS,
 } from '../data/mockData';
-
 import type {
   User,
   Skill,
@@ -57,8 +43,7 @@ export interface CloudStateBridgeResult {
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setReviews: Dispatch<SetStateAction<Review[]>>;
 
-
-  // Direct Firestore mutation methods
+  // Direct database mutation methods
   addSkillToCloud: (skill: Skill) => Promise<void>;
   updateSkillInCloud: (skillId: string, data: Partial<Skill>) => Promise<void>;
   deleteSkillFromCloud: (skillId: string) => Promise<void>;
@@ -73,10 +58,13 @@ export interface CloudStateBridgeResult {
   addReviewToCloud: (review: Review) => Promise<void>;
 }
 
-function cleanData<T>(snapshot: QueryDocumentSnapshot<DocumentData>): T {
+function cleanRow<T>(row: any): T {
+  if (!row) return row;
+  const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
   return {
-    id: snapshot.id,
-    ...snapshot.data(),
+    ...raw,
+    ...row,
+    id: String(row.id || raw.id),
   } as T;
 }
 
@@ -90,13 +78,8 @@ function loadFromOfflineCache<T>(key: string, fallback: T): T {
 }
 
 export function useCloudStateBridge(): CloudStateBridgeResult {
-  const { currentUser: firebaseUser, userProfile, loading: authLoading, updateUserProfile } = useAuth();
+  const { currentUser: firebaseUser, userProfile, loading: authLoading } = useAuth();
 
-  // Firebase Auth + Firestore profile are the authoritative identity source.
-  // localStorage is intentionally NOT used to initialize currentUser.
-  // Identity is supplied by AuthContext/Firestore only.
-  // An empty structural object is used only while Firebase Auth/Firestore
-  // is resolving. It is never treated as authenticated identity.
   const [currentUser, setCurrentUserState] = useState<User | null>(() =>
     userProfile ? (userProfile as User) : null
   );
@@ -128,46 +111,43 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
   const uidRef = useRef<string | null>(null);
 
   const requireAuthenticatedUser = useCallback(() => {
-    if (!isFirebaseConfigured || !firebaseUser) {
-      throw new Error("Authenticated Firebase user required.");
+    if (!firebaseUser) {
+      throw new Error("Authenticated user required.");
     }
-
     return firebaseUser.uid;
   }, [firebaseUser]);
-  // Phase 1 identity synchronization:
-  // Firebase Auth/AuthContext is authoritative. Never restore an old
-  // skillswap_user or CURRENT_USER as an authenticated identity.
+
+  // Synchronize identity
   useEffect(() => {
-    // Firebase Auth is authoritative.
+    if (authLoading) {
+      setAuthenticated(false);
+      setError(null);
+      return;
+    }
+
     if (firebaseUser) {
       uidRef.current = firebaseUser.uid;
       setAuthenticated(true);
 
       if (userProfile) {
-        // Never allow a Firestore/client supplied ID to replace Firebase UID.
         setCurrentUserState({
           ...(userProfile as User),
           id: firebaseUser.uid,
         });
       }
-
       setError(null);
       return;
     }
 
-    // No Firebase identity exists.
     uidRef.current = null;
     setAuthenticated(false);
-
-    // Do not restore CURRENT_USER or skillswap_user.
     if (!authLoading) {
       setCurrentUserState(null);
-      setError("Authentication required.");
+      setError(null);
     }
   }, [userProfile, firebaseUser, authLoading]);
 
-
-  // Sync to local offline cache layer
+  // Sync to local offline cache
   useEffect(() => {
     try {
       localStorage.setItem('skillswap_skills', JSON.stringify(skills));
@@ -180,287 +160,192 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     }
   }, [skills, proposals, sessions, messages, reviews]);
 
-  // Direct Firestore mutation methods
+  // Direct mutation methods
   const addSkillToCloud = useCallback(async (skill: Skill) => {
     const uid = requireAuthenticatedUser();
-
     try {
-      const skillRef = doc(db, 'skills', skill.id);
-      await setDoc(
-        skillRef,
-        {
-          ...skill,
-          userId: skill.userId || uid,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      const payload = {
+        ...skill,
+        userId: uid,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        raw_data: skill,
+      };
+      const { error } = await supabase.from('skills').upsert(payload);
+      if (error) throw new Error(error.message);
       setSkillsState((prev) => [skill, ...prev.filter((s) => s.id !== skill.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing skill to Firestore:', err);
+      console.error('[CloudBridge] Error writing skill to Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
   const updateSkillInCloud = useCallback(async (skillId: string, data: Partial<Skill>) => {
     requireAuthenticatedUser();
-
     try {
-      const skillRef = doc(db, 'skills', skillId);
-      await setDoc(skillRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+      const payload = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        raw_data: data,
+      };
+      const { error } = await supabase.from('skills').update(payload).eq('id', skillId);
+      if (error) throw new Error(error.message);
       setSkillsState((prev) => prev.map((s) => (s.id === skillId ? { ...s, ...data } : s)));
     } catch (err: any) {
-      console.error('[CloudBridge] Error updating skill in Firestore:', err);
+      console.error('[CloudBridge] Error updating skill in Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
   const deleteSkillFromCloud = useCallback(async (skillId: string) => {
     requireAuthenticatedUser();
-
     try {
-      await deleteDoc(doc(db, 'skills', skillId));
+      const { error } = await supabase.from('skills').delete().eq('id', skillId);
+      if (error) throw new Error(error.message);
       setSkillsState((prev) => prev.filter((s) => s.id !== skillId));
     } catch (err: any) {
-      console.error('[CloudBridge] Error deleting skill from Firestore:', err);
+      console.error('[CloudBridge] Error deleting skill from Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
   const addProposalToCloud = useCallback(async (proposal: SwapProposal) => {
-    requireAuthenticatedUser();
-
+    const uid = requireAuthenticatedUser();
     try {
-      const propRef = doc(db, 'proposals', proposal.id);
-      const participantIds = [proposal.senderId, proposal.recipientId].filter(Boolean);
-      await setDoc(
-        propRef,
-        {
-          ...proposal,
-          participantIds,
-          createdAt: proposal.createdAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
+      const participantIds = Array.from(
+        new Set([uid, proposal.recipientId, proposal.senderId].filter(Boolean))
       );
+      const payload = {
+        ...proposal,
+        participantIds,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        raw_data: proposal,
+      };
+      const { error } = await supabase.from('proposals').upsert(payload);
+      if (error) throw new Error(error.message);
       setProposalsState((prev) => [proposal, ...prev.filter((p) => p.id !== proposal.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing proposal to Firestore:', err);
+      console.error('[CloudBridge] Error saving proposal to Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
-  const updateProposalStatusInCloud = useCallback(
-    async (proposalId: string, status: SwapProposal['status']) => {
-      try {
-        const propRef = doc(db, 'proposals', proposalId);
-        await setDoc(propRef, { status, updatedAt: new Date().toISOString() }, { merge: true });
-        setProposalsState((prev) => prev.map((p) => (p.id === proposalId ? { ...p, status } : p)));
-      } catch (err: any) {
-        console.error('[CloudBridge] Error updating proposal status in Firestore:', err);
-        throw err;
-      }
-    },
-    []
-  );
+  const updateProposalStatusInCloud = useCallback(async (
+    proposalId: string,
+    status: SwapProposal['status']
+  ) => {
+    requireAuthenticatedUser();
+    try {
+      const { error } = await supabase
+        .from('proposals')
+        .update({ status, updatedAt: new Date().toISOString() })
+        .eq('id', proposalId);
+      if (error) throw new Error(error.message);
+      setProposalsState((prev) =>
+        prev.map((p) => (p.id === proposalId ? { ...p, status } : p))
+      );
+    } catch (err: any) {
+      console.error('[CloudBridge] Error updating proposal status in Supabase:', err);
+      throw err;
+    }
+  }, [requireAuthenticatedUser]);
 
   const addSessionToCloud = useCallback(async (session: Session) => {
-    requireAuthenticatedUser();
-
+    const uid = requireAuthenticatedUser();
     try {
-      const sessRef = doc(db, 'sessions', session.id);
-      const participantIds = [session.mentorId, session.learnerId].filter(Boolean);
-      await setDoc(
-        sessRef,
-        {
-          ...session,
-          participantIds,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      const participantIds = Array.from(
+        new Set([
+          uid,
+          session.mentorId,
+          session.learnerId,
+          ...(session.participantIds || []),
+        ].filter(Boolean))
+      ) as string[];
+
+      const payload = {
+        ...session,
+        participantIds,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        raw_data: session,
+      };
+      const { error } = await supabase.from('sessions').upsert(payload);
+      if (error) throw new Error(error.message);
       setSessionsState((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing session to Firestore:', err);
+      console.error('[CloudBridge] Error saving session to Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
   const updateSessionInCloud = useCallback(async (sessionId: string, data: Partial<Session>) => {
+    requireAuthenticatedUser();
     try {
-      const sessRef = doc(db, 'sessions', sessionId);
-      await setDoc(sessRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
-      setSessionsState((prev) => prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s)));
+      const payload = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        raw_data: data,
+      };
+      const { error } = await supabase.from('sessions').update(payload).eq('id', sessionId);
+      if (error) throw new Error(error.message);
+      setSessionsState((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s))
+      );
     } catch (err: any) {
-      console.error('[CloudBridge] Error updating session in Firestore:', err);
+      console.error('[CloudBridge] Error updating session in Supabase:', err);
       throw err;
     }
-  }, []);
+  }, [requireAuthenticatedUser]);
 
   const addMessageToCloud = useCallback(async (message: ChatMessage) => {
-    requireAuthenticatedUser();
-
+    const uid = requireAuthenticatedUser();
     try {
-      const msgRef = doc(db, 'messages', message.id);
-      await setDoc(
-        msgRef,
-        {
-          ...message,
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      const participantIds = Array.from(
+        new Set([uid, message.senderId, message.recipientId, ...(message.participantIds || [])].filter(Boolean))
+      ) as string[];
+
+      const payload = {
+        ...message,
+        participantIds,
+        createdAt: new Date().toISOString(),
+        raw_data: message,
+      };
+      const { error } = await supabase.from('messages').insert(payload);
+      if (error) throw new Error(error.message);
       setMessagesState((prev) => [...prev, message]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing message to Firestore:', err);
+      console.error('[CloudBridge] Error sending message to Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
   const addReviewToCloud = useCallback(async (review: Review) => {
     requireAuthenticatedUser();
-
     try {
-      const revRef = doc(db, 'reviews', review.id);
-      await setDoc(
-        revRef,
-        {
-          ...review,
-          createdAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      const payload = {
+        ...review,
+        createdAt: new Date().toISOString(),
+        raw_data: review,
+      };
+      const { error } = await supabase.from('reviews').insert(payload);
+      if (error) throw new Error(error.message);
       setReviewsState((prev) => [review, ...prev.filter((r) => r.id !== review.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing review to Firestore:', err);
+      console.error('[CloudBridge] Error saving review to Supabase:', err);
       throw err;
     }
   }, [requireAuthenticatedUser]);
 
-  // Intercepting dispatchers that automatically write to Firestore
-  const setSkills: Dispatch<SetStateAction<Skill[]>> = useCallback((action) => {
-    if (!firebaseUser) {
-      console.warn('[CloudBridge] Ignoring cloud mutation without Firebase authentication.');
-      return;
-    }
-    setSkillsState((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      if (Array.isArray(next) && next.length > prev.length) {
-        const added = next.filter((item) => !prev.some((p) => p.id === item.id));
-        added.forEach((item) => {
-          setDoc(
-            doc(db, 'skills', item.id),
-            { ...item, updatedAt: new Date().toISOString() },
-            { merge: true }
-          ).catch(() => {});
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const setProposals: Dispatch<SetStateAction<SwapProposal[]>> = useCallback((action) => {
-    if (!firebaseUser) {
-      console.warn('[CloudBridge] Ignoring cloud mutation without Firebase authentication.');
-      return;
-    }
-    setProposalsState((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      if (Array.isArray(next)) {
-        next.forEach((item) => {
-          const participantIds = [item.senderId, item.recipientId].filter(Boolean);
-          setDoc(
-            doc(db, 'proposals', item.id),
-            { ...item, participantIds, updatedAt: new Date().toISOString() },
-            { merge: true }
-          ).catch(() => {});
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const setSessions: Dispatch<SetStateAction<Session[]>> = useCallback((action) => {
-    if (!firebaseUser) {
-      console.warn('[CloudBridge] Ignoring cloud mutation without Firebase authentication.');
-      return;
-    }
-    setSessionsState((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      if (Array.isArray(next)) {
-        next.forEach((item) => {
-          setDoc(
-            doc(db, 'sessions', item.id),
-            { ...item, updatedAt: new Date().toISOString() },
-            { merge: true }
-          ).catch(() => {});
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const setMessages: Dispatch<SetStateAction<ChatMessage[]>> = useCallback((action) => {
-    if (!firebaseUser) {
-      console.warn('[CloudBridge] Ignoring cloud mutation without Firebase authentication.');
-      return;
-    }
-    setMessagesState((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      if (Array.isArray(next)) {
-        const added = next.filter((item) => !prev.some((p) => p.id === item.id));
-        added.forEach((item) => {
-          setDoc(
-            doc(db, 'messages', item.id),
-            { ...item, createdAt: new Date().toISOString() },
-            { merge: true }
-          ).catch(() => {});
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  const setReviews: Dispatch<SetStateAction<Review[]>> = useCallback((action) => {
-    if (!firebaseUser) {
-      console.warn('[CloudBridge] Ignoring cloud mutation without Firebase authentication.');
-      return;
-    }
-    setReviewsState((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      if (Array.isArray(next)) {
-        const added = next.filter((item) => !prev.some((p) => p.id === item.id));
-        added.forEach((item) => {
-          setDoc(
-            doc(db, 'reviews', item.id),
-            { ...item, createdAt: new Date().toISOString() },
-            { merge: true }
-          ).catch(() => {});
-        });
-      }
-      return next;
-    });
-  }, []);
-
-  // Main real-time Firestore listeners
+  // Supabase Real-time Subscriptions and Queries
   useEffect(() => {
     let disposed = false;
-    const unsubscribers: Unsubscribe[] = [];
 
-    const stop = () => {
-      unsubscribers.forEach((unsub) => {
-        try { unsub(); } catch {}
-      });
-      unsubscribers.length = 0;
-    };
-
-    if (!isFirebaseConfigured || !firebaseUser) {
+    if (!firebaseUser) {
       uidRef.current = null;
       setAuthenticated(false);
       setLoading(false);
-      return () => stop();
+      return;
     }
 
     const uid = firebaseUser.uid;
@@ -468,80 +353,206 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     setAuthenticated(true);
     setLoading(true);
 
-    const setup = async () => {
+    const fetchData = async () => {
       try {
-        // Profile identity is owned by AuthContext.
-        const userRef = doc(db, 'users', uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists() && !disposed) {
-          setCurrentUserState({ id: uid, ...userSnap.data() } as User);
+        const token = await firebaseUser.getIdToken().catch(() => null);
+        if (token) setSupabaseAuthToken(token);
+
+        // Fetch User Profile
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', uid)
+          .maybeSingle();
+        if (!disposed && userRow) {
+          setCurrentUserState(cleanRow<User>(userRow));
         }
 
-        const skillsQuery = query(collection(db, 'skills'));
-        unsubscribers.push(onSnapshot(skillsQuery, (snapshot) => {
-          if (!disposed && !snapshot.empty) setSkillsState(snapshot.docs.map((d) => cleanData<Skill>(d)));
-        }, (err) => console.warn('[CloudBridge] skills sync warning:', err)));
+        // Fetch Skills
+        const { data: skillsRows } = await supabase
+          .from('skills')
+          .select('*')
+          .order('createdAt', { ascending: false });
+        if (!disposed && skillsRows && skillsRows.length > 0) {
+          setSkillsState(skillsRows.map((r) => cleanRow<Skill>(r)));
+        }
 
-        const proposalsQuery = query(collection(db, 'proposals'));
-        unsubscribers.push(onSnapshot(proposalsQuery, (snapshot) => {
-          if (!disposed && !snapshot.empty) setProposalsState(snapshot.docs.map((d) => cleanData<SwapProposal>(d)));
-        }, (err) => console.warn('[CloudBridge] proposals sync warning:', err)));
+        // Fetch Proposals
+        const { data: proposalRows } = await supabase
+          .from('proposals')
+          .select('*')
+          .order('createdAt', { ascending: false });
+        if (!disposed && proposalRows) {
+          const userProposals = proposalRows
+            .filter((p: any) =>
+              p.senderId === uid ||
+              p.recipientId === uid ||
+              (Array.isArray(p.participantIds) && p.participantIds.includes(uid))
+            )
+            .map((r) => cleanRow<SwapProposal>(r));
+          if (userProposals.length > 0) setProposalsState(userProposals);
+        }
 
-        const sessionsQuery = query(collection(db, 'sessions'));
-        unsubscribers.push(onSnapshot(sessionsQuery, (snapshot) => {
-          if (!disposed && !snapshot.empty) setSessionsState(snapshot.docs.map((d) => cleanData<Session>(d)));
-        }, (err) => console.warn('[CloudBridge] sessions sync warning:', err)));
+        // Fetch Sessions
+        const { data: sessionRows } = await supabase
+          .from('sessions')
+          .select('*')
+          .order('createdAt', { ascending: false });
+        if (!disposed && sessionRows) {
+          const userSessions = sessionRows
+            .filter((s: any) =>
+              s.mentorId === uid ||
+              s.learnerId === uid ||
+              (Array.isArray(s.participantIds) && s.participantIds.includes(uid))
+            )
+            .map((r) => cleanRow<Session>(r));
+          if (userSessions.length > 0) setSessionsState(userSessions);
+        }
 
-        const messagesQuery = query(collection(db, 'messages'));
-        unsubscribers.push(onSnapshot(messagesQuery, (snapshot) => {
-          if (!disposed && !snapshot.empty) setMessagesState(snapshot.docs.map((d) => cleanData<ChatMessage>(d)));
-        }, (err) => console.warn('[CloudBridge] messages sync warning:', err)));
+        // Fetch Messages
+        const { data: messageRows } = await supabase
+          .from('messages')
+          .select('*')
+          .order('createdAt', { ascending: true });
+        if (!disposed && messageRows) {
+          const userMessages = messageRows
+            .filter((m: any) =>
+              m.senderId === uid ||
+              m.recipientId === uid ||
+              (Array.isArray(m.participantIds) && m.participantIds.includes(uid))
+            )
+            .map((r) => cleanRow<ChatMessage>(r));
+          if (userMessages.length > 0) setMessagesState(userMessages);
+        }
 
-        const reviewsQuery = query(collection(db, 'reviews'));
-        unsubscribers.push(onSnapshot(reviewsQuery, (snapshot) => {
-          if (!disposed && !snapshot.empty) setReviewsState(snapshot.docs.map((d) => cleanData<Review>(d)));
-        }, (err) => console.warn('[CloudBridge] reviews sync warning:', err)));
-
+        // Fetch Reviews
+        const { data: reviewRows } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('createdAt', { ascending: false });
+        if (!disposed && reviewRows && reviewRows.length > 0) {
+          setReviewsState(reviewRows.map((r) => cleanRow<Review>(r)));
+        }
+      } catch (err) {
+        console.warn('[CloudBridge] Initial Supabase query warning:', err);
+      } finally {
         if (!disposed) setLoading(false);
-      } catch (err: any) {
-        console.error('[CloudBridge] listener setup failed:', err);
-        if (!disposed) {
-          setError(err?.message || 'Cloud synchronization failed');
-          setLoading(false);
-        }
       }
     };
 
-    setup();
+    fetchData();
+
+    // Subscribe to Supabase Realtime Channel
+    const channel = supabase
+      .channel('skillswap_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'skills' },
+        () => {
+          supabase
+            .from('skills')
+            .select('*')
+            .order('createdAt', { ascending: false })
+            .then(({ data }) => {
+              if (!disposed && data) setSkillsState(data.map((r) => cleanRow<Skill>(r)));
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'proposals' },
+        () => {
+          supabase
+            .from('proposals')
+            .select('*')
+            .order('createdAt', { ascending: false })
+            .then(({ data }) => {
+              if (!disposed && data) {
+                const filtered = data
+                  .filter((p: any) =>
+                    p.senderId === uid ||
+                    p.recipientId === uid ||
+                    (Array.isArray(p.participantIds) && p.participantIds.includes(uid))
+                  )
+                  .map((r) => cleanRow<SwapProposal>(r));
+                setProposalsState(filtered);
+              }
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sessions' },
+        () => {
+          supabase
+            .from('sessions')
+            .select('*')
+            .order('createdAt', { ascending: false })
+            .then(({ data }) => {
+              if (!disposed && data) {
+                const filtered = data
+                  .filter((s: any) =>
+                    s.mentorId === uid ||
+                    s.learnerId === uid ||
+                    (Array.isArray(s.participantIds) && s.participantIds.includes(uid))
+                  )
+                  .map((r) => cleanRow<Session>(r));
+                setSessionsState(filtered);
+              }
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        () => {
+          supabase
+            .from('messages')
+            .select('*')
+            .order('createdAt', { ascending: true })
+            .then(({ data }) => {
+              if (!disposed && data) {
+                const filtered = data
+                  .filter((m: any) =>
+                    m.senderId === uid ||
+                    m.recipientId === uid ||
+                    (Array.isArray(m.participantIds) && m.participantIds.includes(uid))
+                  )
+                  .map((r) => cleanRow<ChatMessage>(r));
+                setMessagesState(filtered);
+              }
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reviews' },
+        () => {
+          supabase
+            .from('reviews')
+            .select('*')
+            .order('createdAt', { ascending: false })
+            .then(({ data }) => {
+              if (!disposed && data) setReviewsState(data.map((r) => cleanRow<Review>(r)));
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users', filter: `id=eq.${uid}` },
+        (payload) => {
+          if (!disposed && payload.new) {
+            setCurrentUserState(cleanRow<User>(payload.new));
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       disposed = true;
-      stop();
+      supabase.removeChannel(channel);
     };
-  }, [firebaseUser, authLoading]);
-
-  const setCurrentUser = useCallback((action: User | ((prev: User) => User)) => {
-    setCurrentUserState((prev) => {
-      const nextUser = typeof action === 'function' ? action(prev) : action;
-      const uid = firebaseUser?.uid;
-      if (!uid) {
-        console.warn('[CloudBridge] Ignoring currentUser mutation without Firebase authentication.');
-        return prev;
-      }
-      if (nextUser.id && nextUser.id !== uid) {
-        console.warn('[CloudBridge] Ignoring attempted identity change from Firebase UID.');
-        return prev;
-      }
-      const safeUser = {
-        ...nextUser,
-        id: uid,
-      };
-
-      updateUserProfile(safeUser).catch((err) => {
-        console.error('[CloudBridge] Profile update failed:', err);
-      });
-      return safeUser;
-    });
-  }, [firebaseUser, updateUserProfile]);
+  }, [firebaseUser]);
 
   return {
     currentUser,
@@ -553,12 +564,12 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     loading,
     authenticated,
     error,
-    setCurrentUser,
-    setSkills,
-    setProposals,
-    setSessions,
-    setMessages,
-    setReviews,
+    setCurrentUser: setCurrentUserState,
+    setSkills: setSkillsState,
+    setProposals: setProposalsState,
+    setSessions: setSessionsState,
+    setMessages: setMessagesState,
+    setReviews: setReviewsState,
     addSkillToCloud,
     updateSkillInCloud,
     deleteSkillFromCloud,

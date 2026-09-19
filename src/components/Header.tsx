@@ -21,7 +21,8 @@ import {
   Settings,
   CreditCard,
   MapPin,
-  Mic
+  Mic,
+  Download
 } from 'lucide-react';
 import { User, SwapProposal, ChatMessage } from '../types';
 import { networkNotifier } from '../utils/networkNotifier';
@@ -44,6 +45,7 @@ interface HeaderProps {
   onOpenAIAssistant?: () => void;
   onOpenSettings?: () => void;
   onOpenStripeCheckout?: () => void;
+  onOpenCheckout?: () => void;
   pendingProposalsCount: number;
 }
 
@@ -64,6 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAIAssistant,
   onOpenSettings,
   onOpenStripeCheckout,
+  onOpenCheckout,
   pendingProposalsCount,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(networkNotifier.isOnline);
@@ -168,14 +171,15 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="hidden sm:inline text-slate-400">Credits</span>
               </button>
 
-              {onOpenStripeCheckout && (
+              {(onOpenCheckout || onOpenStripeCheckout) && (
                 <button
-                  onClick={onOpenStripeCheckout}
-                  className="p-1.5 bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1"
-                  title="Buy Time Credits via Stripe"
+                  id="header-buy-credits-btn"
+                  onClick={onOpenCheckout || onOpenStripeCheckout}
+                  className="p-1.5 bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  title="Buy Time Credits (M-Pesa, Card, PayPal)"
                 >
                   <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden md:inline">Buy</span>
+                  <span className="hidden md:inline">Buy Credits</span>
                 </button>
               )}
             </div>
@@ -213,6 +217,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Invite (+1 Cr)</span>
               </button>
             )}
+
+            {/* Direct Codebase ZIP Download for Termux & GitHub */}
+            <a
+              href="/download/skillswap.zip"
+              download="skillswap.zip"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/30 transition-all active:scale-95 cursor-pointer no-underline"
+              title="Download SkillSwap Codebase ZIP for Termux / GitHub"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Download ZIP</span>
+              <span className="sm:hidden">ZIP</span>
+            </a>
 
             {/* Post Skill Button */}
             <button

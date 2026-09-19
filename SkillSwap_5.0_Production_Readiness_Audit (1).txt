@@ -1,0 +1,202 @@
+SKILLSWAP 5.0 — PRODUCTION READINESS AUDIT
+========================================================================
+Audit source: skillswapproductioncsheck.zip
+Audit date: 2026-09-15
+
+EXECUTIVE VERDICT
+------------------------------------------------------------------------
+STATUS: NOT PRODUCTION-READY YET
+
+The project has a substantially improved foundation: Firebase Auth is intended to be the authoritative
+identity layer, Firestore rules are significantly hardened, and the server-side credit/payment services
+are moving in the correct direction.
+
+However, the uploaded artifact still has release blockers. The most urgent is credential exposure.
+The ZIP contains real secrets and a Firebase service-account key. Rotate/revoke those credentials
+before doing anything else with a public deployment.
+
+RISK LEVELS
+P0 = Critical / must fix before any deployment
+P1 = High / must fix before public production
+P2 = Medium / hardening and quality work
+
+P0 — CRITICAL
+------------------------------------------------------------------------
+[P0] SECRETS COMPROMISED
+  The uploaded production-check ZIP contains real secret material in .env and .env.example. Treat exposed credentials as compromised and rotate/revoke them before production. Never reuse them.
+
+[P0] REAL SECRETS IN .env.example
+  The .env.example file contains real credential values instead of placeholders. Replace it with safe placeholders and keep real secrets only in the deployment secret store/environment.
+
+SECRET ROTATION CHECKLIST
+1. Rotate/revoke Firebase Admin service-account credentials.
+2. Rotate/revoke Stripe secret and webhook credentials.
+3. Rotate/revoke M-Pesa credentials/passkey.
+4. Rotate/revoke PayPal secret.
+5. Rotate/revoke exposed AI provider/API keys.
+6. Rotate/revoke exposed messaging/FCM credentials.
+7. Replace .env.example with placeholders only.
+8. Remove serviceaccountkey.json from production source/build artifacts.
+9. If these secrets ever entered Git history, purge them from history in addition to rotation.
+
+P1 — HIGH / RELEASE BLOCKERS
+------------------------------------------------------------------------
+[P1] SERVICE ACCOUNT FILE SHIPPED
+  serviceaccountkey.json is present in the artifact. A production build/container must never ship a Firebase Admin private key file.
+
+[P1] DEMO OTP/AUTH UI STILL PRESENT
+  AuthModal.tsx still contains demo OTP/quick-demo behavior. Production authentication must use real Firebase Auth flows.
+
+[P1] FAKE/DEMO CERTIFICATION DATA
+  SkillCertificationsSection.tsx contains demo certificate/verified-credential presentation. Remove or replace with real verification.
+
+[P1] SIMULATED NOTIFICATIONS PRESENT
+  GlobalNotificationListener.tsx contains notification simulation paths. Remove them or hard-disable them in production.
+
+[P1] UNSAFE/CONFUSING ESCROW TRANSFER ROUTE
+  The /api/escrow/transfer route creates a pending ledger record from client-supplied values but is not the authoritative credit-lock workflow. Remove it or consolidate escrow into the server-authoritative credits service.
+
+[P1] TEST/OPERATIONAL ENDPOINTS
+  Production should remove or admin-gate /api/notifications/simulate-test-email and /api/audit/run.
+
+[P1] STALE API ARCHITECTURE
+  The client contains stale API paths not represented by the current server architecture. Two competing API layers increase breakage and security risk.
+
+[P1] NO AUTOMATED TEST SCRIPT
+  package.json has no test script. Add unit, integration, authorization, payment/webhook and security tests.
+
+[P1] ADMIN SDK FILE FALLBACK
+  firebaseAdmin.ts can fall back to a local service-account JSON when environment credentials are absent. Make that fallback development-only and fail closed in production.
+
+[P1] PORT IS HARDCODED
+  Use process.env.PORT so the deployment platform controls the listening port.
+
+P2 — HARDENING / QUALITY
+------------------------------------------------------------------------
+[P2] INPUT SCHEMA VALIDATION
+  Add Zod/Valibot or equivalent validation to every server endpoint, especially credit amounts, IDs, AI input, ratings and feedback.
+
+[P2] AI QUOTAS/COST CONTROL
+  IP rate limiting is not enough for AI spend protection. Add per-user quotas, budgets and abuse monitoring.
+
+[P2] SHARED RATE LIMIT STORE
+  The in-memory limiter is unsuitable for horizontally scaled deployments. Use a shared store such as Redis when scaling.
+
+[P2] OBSERVABILITY
+  Add structured logs, error tracking, metrics, alerts and payment/webhook audit trails.
+
+[P2] FIREBASE STORAGE RULES
+  Review/deploy Firebase Storage rules if Storage is used; the audited rules file covers Firestore, not Storage.
+
+[P2] FIRESTORE INDEXES
+  Verify indexes required by participantIds array-contains and notification queries in the target Firebase project.
+
+[P2] WEBRTC HARDENING
+  Review room expiry/cleanup, authorization, abuse limits and TURN servers. STUN-only connectivity can fail on restrictive mobile/NAT networks.
+
+[P2] HEALTH/READINESS
+  Keep health checks lightweight and add protected dependency/readiness checks without leaking secrets.
+
+[P2] FRONTEND BUNDLE
+  The production bundle triggers the >500KB warning. Use route/component code splitting and lazy loading.
+
+[P2] DOCUMENTATION
+  Update README/docs to match the actual React version, API architecture, environment variables and deployment procedure.
+
+ARCHITECTURE — WHAT IS GOOD
+- Firebase Auth is the intended identity authority.
+- Cloud Bridge is intended to derive identity from AuthContext/Firebase UID rather than localStorage.
+- Server Firebase token verification uses a Bearer token and Firebase Admin verification.
+- Firestore rules use default-deny and participant/owner scoping for sensitive collections.
+- Server-side package catalog and credit/payment services are the right architectural direction.
+- Stripe webhook signature verification and payment idempotency are present.
+- PayPal capture verifies ownership/amount before fulfillment.
+- M-Pesa callback handling is separated from the client payment request path.
+
+ARCHITECTURE — WHAT MUST CHANGE
+- Keep one authoritative API architecture; remove/rewrite stale client API modules.
+- Keep one authoritative credit/escrow workflow; remove confusing parallel routes.
+- Make all production configuration environment/secret-manager driven.
+- Remove all demo/test user-facing behavior from production builds.
+
+FINANCIAL / CREDIT CHECKLIST
+- Validate every credit amount as positive, finite and bounded.
+- Validate proposal time-credit amounts on the server.
+- Validate rating range (1–5) and feedback length.
+- Make session completion/cancellation business rules explicit.
+- Preserve idempotency across payment callbacks and credit mutations.
+- Define dispute/refund behavior before launch.
+
+AUTHENTICATION CHECKLIST
+- No localStorage/mock user as authentication authority.
+- No fake OTP acceptance.
+- No quick-demo credentials.
+- Real password reset/account recovery.
+- Configure production Firebase Auth providers and authorized domains.
+- Consider email verification and MFA according to product risk.
+
+FIRESTORE / FIREBASE CHECKLIST
+- Deploy and verify Firestore rules.
+- Verify required composite indexes.
+- Review Storage rules if Storage is used.
+- Confirm reviews' intended privacy (the audited rules allow signed-in users to read reviews).
+- Remove client write attempts to server-only collections where possible.
+
+DEPLOYMENT CHECKLIST
+- NODE_ENV=production
+- PORT from environment
+- Exact HTTPS ALLOWED_ORIGINS
+- Production FRONTEND_URL
+- Managed Firebase Admin credentials
+- Stripe live keys + verified webhook
+- Production M-Pesa credentials + stable public callback URL
+- PayPal live credentials/environment
+- AI keys + per-user quotas
+- HTTPS reverse proxy/load balancer
+- Monitoring/logging/alerts
+- Firestore backup/restore plan
+
+TEST PLAN BEFORE GO-LIVE
+1. Auth: signup/login/logout/password reset/session persistence.
+2. Authorization: user A cannot access user B's private data.
+3. Proposals: sender/recipient permissions and invalid IDs.
+4. Sessions: accept/complete/cancel and idempotency.
+5. Credits: insufficient balance and concurrent operations.
+6. Payments: Stripe webhook, M-Pesa callback, PayPal capture and duplicate callbacks.
+7. Notifications: ownership/read/delete permissions.
+8. AI: auth, quota, oversized input and provider failure.
+9. WebRTC: participant authorization, expiry and mobile/NAT connectivity.
+10. Clean production build/startup with NO local service-account file.
+
+RECOMMENDED IMPLEMENTATION ORDER
+------------------------------------------------------------------------
+PHASE 0.2 — SECRET & DEPLOYMENT SAFETY
+  Rotate all exposed credentials; sanitize .env.example; remove service-account file from artifacts.
+
+PHASE 2 — CLOUD/SECURITY COMPLETION
+  Fix the missing where import; align rules/indexes/storage; eliminate client-authoritative writes.
+
+PHASE 3 — API CONSOLIDATION
+  Remove/rewrite src/lib/api.ts and src/services/api.js so only current server routes are used.
+
+PHASE 4 — REMOVE DEMO FEATURES
+  Remove fake OTP, demo credentials, fake certificates, simulated notifications and test endpoints.
+
+PHASE 5 — FINANCIAL HARDENING
+  Validate credit/financial inputs and make session/escrow state transitions authoritative and idempotent.
+
+PHASE 6 — TESTING & OBSERVABILITY
+  Add automated tests, security tests, monitoring, alerting and deployment smoke tests.
+
+PHASE 7 — CONTROLLED PRODUCTION DEPLOYMENT
+  HTTPS/domain, secrets, Firebase deployment, payment callbacks, backups and final acceptance testing.
+
+FINAL CONCLUSION
+------------------------------------------------------------------------
+DO NOT LAUNCH THE CURRENT ARTIFACT PUBLICLY.
+
+The project is repairable and has a much better security foundation than a client-authoritative design,
+but credential exposure and the P1 issues above are sufficient to block release. Complete P0 first,
+then work through P1, test the repaired system in staging, and only then proceed to production.
+
+This audit intentionally does not reproduce any secret values found in the uploaded project.

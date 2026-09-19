@@ -143,6 +143,11 @@ export interface Session {
   notes?: string;
   learnerRating?: number;
   learnerFeedback?: string;
+  mentorId?: string;
+  learnerId?: string;
+  participantIds?: string[];
+  escrowId?: string | null;
+  timeCreditsEscrowed?: number;
 }
 
 export interface ChatMessage {
@@ -154,6 +159,8 @@ export interface ChatMessage {
   message: string;
   timestamp: string;
   isSystem?: boolean;
+  recipientId?: string;
+  participantIds?: string[];
 }
 
 export interface SkillRequest {

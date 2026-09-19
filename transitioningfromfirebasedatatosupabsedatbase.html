@@ -1,0 +1,83 @@
+Here is are some ideas since firestore database  
+
+Need payment and at this time am broke now i need onother option which is subabase 
+So i want these instructions where they are useful and help me do this i mean use superbase database so check everything file in git hub   check code lone by line  and i had audited where firebase  used in the project check the audit txt file for easier understand understanding details of the new supabase account are here  
+I will create the supabase account using the  git hub link or username  help since i want this to be fast after reading everything thing from document you will  help by  by creating a script that will do all  this  transitions and put the project back to production. After you have given me the script i will run it on termux  which already has i copy of the GitHub files
+ The script will create the necessary files that are to be created alos make modification of the existing files so you should read everything code line by line in each file just create one massive  script file and put it in this workspace then i will transfer it and run it termux and it will do the necessary  call it supabse transition.py or whatever 
+Remember the idea is not to use firebase database and use superbase database 
+
+SUPABASE_URL=https://beekpvtusbijyrzkzwdw.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZWtwdnR1c2JpanlyemtzendlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MzQzNTAsImV4cCI6MjEwNTMxMDM1MH0.oOI2wwokNoGYS9-i6sX9AfxDVJ-BdCQIUkRZdFiGTSA
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_CCxX4-J_eI5vDlWdd-SSvA_nfSJIXU4
+
+
+TASK: Migrate this SkillSwap project from Firebase Firestore to Supabase Postgres, but KEEP Firebase Authentication.
+
+CURRENT FIREBASE WIRING:
+1. Frontend Auth: src/firebase.ts uses firebase/auth getAuth
+2. All DB Logic: src/hooks/useCloudStateBridge.ts uses firebase/firestore: collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, query, where
+   Tables used: skills, proposals, sessions, messages, reviews, users
+3. API: src/services/api.js uses getAuth() to get JWT for backend
+4. Backend: firebaseAdmin.ts, middleware/auth.js, server/services/paymentsService.ts, server/services/creditsService.ts all use firebase-admin firestore
+
+GOAL:
+1. Keep Firebase Auth for login. Do NOT remove it.
+2. Replace ALL Firestore reads/writes with Supabase.
+3. Make Supabase RLS trust Firebase JWT tokens.
+4. Keep the same function names and return types in useCloudStateBridge so the UI doesn't break.
+
+STEP 1: SETUP
+- Install: @supabase/supabase-js
+- Create src/lib/supabase.ts with createClient using VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+- In Supabase Dashboard > Authentication > JWT, set:
+  Issuer: https://securetoken.google.com/FIREBASE_PROJECT_ID
+  JWKs: https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com
+
+STEP 2: DATABASE SCHEMA
+Create these tables in Supabase SQL:
+```sql
+create table users (id text primary key, name text, credits int default 0, created_at timestamptz default now());
+create table skills (id uuid primary key default gen_random_uuid(), user_id text references users(id), title text, category text, description text, difficulty text, created_at timestamptz default now());
+create table proposals (id uuid primary key default gen_random_uuid(), participantIds text[], teacher_id text, learner_id text, skill_id uuid, status text default 'pending', created_at timestamptz default now());
+create table sessions (id uuid primary key default gen_random_uuid(), participantIds text[], proposal_id uuid, escrowId text, status text, created_at timestamptz default now());
+create table messages (id uuid primary key default gen_random_uuid(), participantIds text[], swap_id uuid, sender_id text, message text, created_at timestamptz default now());
+create table reviews (id uuid primary key default gen_random_uuid(), reviewer_id text, reviewee_id text, rating int, comment text);
+
+alter table skills enable row level security;
+alter table proposals enable row level security;
+alter table sessions enable row level security;
+alter table messages enable row level security;
+alter table reviews enable row level security;
+alter table users enable row level security;
+
+create policy "read all" on skills for select using (true);
+create policy "insert own" on skills for insert with check (auth.uid()::text = user_id);
+create policy "read own" on proposals for select using (auth.uid()::text = any(participantIds));
+create policy "insert own" on proposals for insert with check (auth.uid()::text = any(participantIds));
+Repeat RLS for other tables.
+
+STEP 3: REWRITE useCloudStateBridge.ts
+Replace all onSnapshot with supabase.channel().on('postgres_changes')
+Replace all setDoc with supabase.from().insert() or .update()
+Replace all getDoc with supabase.from().select().eq('id', id).single()
+Replace all deleteDoc with supabase.from().delete().eq('id', id)
+Before any query, call: const token = await getToken(); await supabase.auth.setSession({access_token: token, refresh_token: ''})
+
+STEP 4: UPDATE src/firebase.ts
+Remove getFirestore. Keep only initializeApp and getAuth
+
+STEP 5: BACKEND
+In server/services replace firestore.collection("x").doc().set() with supabase.from("x").insert()
+Use SUPABASE_SERVICE_ROLE_KEY for backend
+
+DELIVERABLES:
+Full new src/lib/supabase.ts
+Full new src/hooks/useCloudStateBridge.ts
+Updated src/firebase.ts
+List of SQL commands above
+Notes on what to add to .env
+
+
+Note 
+You should also do your modification and add you suggestions to make this perfect you have my  permission to do all this you doy have to ask me if you should put a new suggestions or ideas just go ahead and do i will not kill instead i will be happy 
+

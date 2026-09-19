@@ -126,7 +126,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
             <div className="text-center px-2">
               <p className="text-lg font-extrabold text-amber-400 flex items-center justify-center gap-0.5">
-                <Star className="w-4 h-4 fill-current" /> {currentUser.rating.toFixed(1)}
+                <Star className="w-4 h-4 fill-current" /> {(currentUser.rating ?? 5.0).toFixed(1)}
               </p>
               <p className="text-[10px] font-bold text-slate-400 uppercase">Rating</p>
             </div>
@@ -136,7 +136,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         {/* Reputation Badges */}
         <div className="flex flex-wrap items-center gap-2 pt-6 border-t border-slate-800/80 mt-6">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">Badges:</span>
-          {currentUser.badges.map((badge, idx) => (
+          {(currentUser.badges || []).map((badge, idx) => (
             <span
               key={idx}
               className="px-3 py-1 bg-indigo-950/80 text-indigo-200 border border-indigo-700/50 rounded-full text-xs font-bold shadow-sm flex items-center gap-1"
@@ -201,7 +201,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-indigo-400" />
-              <span>Skills I Can Teach ({currentUser.skillsOffered.length})</span>
+              <span>Skills I Can Teach ({(currentUser.skillsOffered || []).length})</span>
             </h2>
             <button
               onClick={onOpenPostSkill}
@@ -212,7 +212,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           <div className="space-y-2">
-            {currentUser.skillsOffered.map((skill, idx) => (
+            {(currentUser.skillsOffered || []).map((skill, idx) => (
               <div key={idx} className="p-3 bg-slate-800/80 border border-slate-700/60 rounded-xl flex items-center justify-between text-xs font-semibold text-slate-200">
                 <span>{skill}</span>
                 <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 text-[10px] rounded-md border border-indigo-800">
@@ -227,11 +227,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
           <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
             <ArrowRightLeft className="w-4 h-4 text-purple-400" />
-            <span>Skills I Want to Learn ({currentUser.skillsDesired.length})</span>
+            <span>Skills I Want to Learn ({(currentUser.skillsDesired || []).length})</span>
           </h2>
 
           <div className="space-y-2">
-            {currentUser.skillsDesired.map((skill, idx) => (
+            {(currentUser.skillsDesired || []).map((skill, idx) => (
               <div key={idx} className="p-3 bg-slate-800/80 border border-slate-700/60 rounded-xl flex items-center justify-between text-xs font-semibold text-purple-200">
                 <span>{skill}</span>
                 <button

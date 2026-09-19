@@ -1,3 +1,5 @@
+// PRODUCTION HARDENING: DEMO_CERTIFICATES must not be presented as verified credentials. Replace with real server-verified credentials before enabling in production.
+// PRODUCTION HARDENING: DEMO_CERTIFICATES must not be presented as verified credentials. Replace with real server-verified credentials before enabling in production.
 import React, { useState } from 'react';
 import { 
   Award, 

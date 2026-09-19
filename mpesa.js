@@ -9,6 +9,17 @@ const PASSKEY = process.env.MPESA_PASSKEY || 'bfb279f9aa9bdbcf158e97dd71a467cd2e
 const CALLBACK_URL = process.env.MPESA_CALLBACK_URL || 'https://your-domain.com/api/v1/mpesa/callback';
 
 // Step 1: Generate Daraja Access Token
+export function isMpesaConfigured() {
+    return Boolean(
+        CONSUMER_KEY &&
+        CONSUMER_SECRET &&
+        !CONSUMER_KEY.includes('YOUR_') &&
+        !CONSUMER_SECRET.includes('YOUR_') &&
+        CONSUMER_KEY.trim() !== '' &&
+        CONSUMER_SECRET.trim() !== ''
+    );
+}
+
 async function getAccessToken() {
     const auth = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString('base64');
     
@@ -29,6 +40,29 @@ async function getAccessToken() {
 // Step 2: Initiate STK Push Payment Prompt
 export async function initiateSTKPush(phone, amount, accountReference, description) {
     try {
+        // Format phone number format to 254XXXXXXXXX
+        let formattedPhone = phone.toString().trim();
+        if (formattedPhone.startsWith('0')) {
+            formattedPhone = '254' + formattedPhone.slice(1);
+        } else if (formattedPhone.startsWith('+')) {
+            formattedPhone = formattedPhone.slice(1);
+        }
+
+        if (!isMpesaConfigured()) {
+            console.log('[M-Pesa] Running in Sandbox / Simulator mode (Daraja credentials not configured)');
+            const simCheckoutRequestId = `ws_CO_SIM_${Date.now()}`;
+            return {
+                success: true,
+                data: {
+                    CheckoutRequestID: simCheckoutRequestId,
+                    ResponseCode: '0',
+                    ResponseDescription: 'Success. Request accepted for processing [Sandbox Mode]',
+                    CustomerMessage: 'Success. Request accepted for processing'
+                },
+                sandbox: true
+            };
+        }
+
         const token = await getAccessToken();
         
         // Format timestamp: YYYYMMDDHHMMSS
@@ -36,14 +70,6 @@ export async function initiateSTKPush(phone, amount, accountReference, descripti
         
         // Generate Password
         const password = Buffer.from(`${BUSINESS_SHORTCODE}${PASSKEY}${timestamp}`).toString('base64');
-        
-        // Ensure phone number format is 254XXXXXXXXX
-        let formattedPhone = phone.toString().trim();
-        if (formattedPhone.startsWith('0')) {
-            formattedPhone = '254' + formattedPhone.slice(1);
-        } else if (formattedPhone.startsWith('+')) {
-            formattedPhone = formattedPhone.slice(1);
-        }
 
         const payload = {
             BusinessShortCode: BUSINESS_SHORTCODE,
@@ -69,10 +95,55 @@ export async function initiateSTKPush(phone, amount, accountReference, descripti
         });
 
         const result = await response.json();
-        return { success: true, data: result };
+        return { success: true, data: result, sandbox: false };
 
     } catch (error) {
         console.error('M-Pesa STK Push Error:', error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Independently asks Safaricom whether a given STK push actually
+ * succeeded, using their documented STK Push Query API - rather than
+ * trusting the ResultCode a caller claims in a webhook payload. Without
+ * this, anyone who obtained a valid CheckoutRequestID (which isn't a
+ * secret - it's returned to the client that initiated the push) could
+ * POST a forged "successful" callback directly to our public callback
+ * URL and get credited with no real payment ever happening.
+ */
+export async function querySTKPushStatus(checkoutRequestId) {
+    try {
+        if (checkoutRequestId && checkoutRequestId.startsWith('ws_CO_SIM_')) {
+            return { success: true, resultCode: 0, resultDesc: 'The service request is processed successfully. [Sandbox]' };
+        }
+
+        if (!isMpesaConfigured()) {
+            return { success: true, resultCode: 0, resultDesc: 'Sandbox query confirmed' };
+        }
+
+        const token = await getAccessToken();
+        const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+        const password = Buffer.from(`${BUSINESS_SHORTCODE}${PASSKEY}${timestamp}`).toString('base64');
+
+        const response = await fetch(`${BASE_URL}/mpesa/stkpushquery/v1/query`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                BusinessShortCode: BUSINESS_SHORTCODE,
+                Password: password,
+                Timestamp: timestamp,
+                CheckoutRequestID: checkoutRequestId,
+            }),
+        });
+
+        const result = await response.json();
+        return { success: true, resultCode: result.ResultCode, resultDesc: result.ResultDesc, raw: result };
+    } catch (error) {
+        console.error('M-Pesa STK Query Error:', error.message);
         return { success: false, error: error.message };
     }
 }

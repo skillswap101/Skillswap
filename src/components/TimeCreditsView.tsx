@@ -26,8 +26,8 @@ interface TimeCreditsViewProps {
   onExploreSkills: () => void;
   onPostSkill: () => void;
   onOpenInviteModal?: () => void;
-  onOpenUnifiedCheckout?: () => void;
   onOpenStripeCheckout?: () => void;
+  onOpenCheckout?: () => void;
 }
 
 export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
@@ -35,8 +35,8 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
   onExploreSkills,
   onPostSkill,
   onOpenInviteModal,
-  onOpenUnifiedCheckout,
   onOpenStripeCheckout,
+  onOpenCheckout,
 }) => {
   const [escrowTxs, setEscrowTxs] = useState<EscrowTransaction[]>(getStoredEscrowTransactions());
   const [stripeTxs, setStripeTxs] = useState<StripeTransaction[]>(() => {
@@ -119,13 +119,14 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
               <p className="text-[11px] text-slate-400">1 Credit = 60 Mins 1-on-1 Mentorship</p>
             </div>
 
-            {(onOpenUnifiedCheckout || onOpenStripeCheckout) && (
+            {(onOpenCheckout || onOpenStripeCheckout) && (
               <button
+                id="vault-buy-credits-btn"
                 type="button"
-                onClick={onOpenUnifiedCheckout || onOpenStripeCheckout}
-                className="w-full py-2 bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                onClick={onOpenCheckout || onOpenStripeCheckout}
+                className="w-full py-2 bg-gradient-to-r from-emerald-600 via-indigo-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <span>Buy Time Credits (Stripe / M-Pesa / PayPal)</span>
+                <span>Buy Credits (M-Pesa, Card, PayPal)</span>
               </button>
             )}
           </div>
@@ -258,22 +259,23 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
         </div>
       </div>
 
-      {/* Stripe Credit Point Purchase Log */}
+      {/* Multi-Gateway Credit Purchase Log */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-emerald-400" />
-            <span>Stripe Point Purchases History Log</span>
+            <span>Time Credit Purchases & Top-up Log</span>
           </h2>
 
-          {(onOpenUnifiedCheckout || onOpenStripeCheckout) && (
+          {(onOpenCheckout || onOpenStripeCheckout) && (
             <button
+              id="vault-topup-history-btn"
               type="button"
-              onClick={onOpenUnifiedCheckout || onOpenStripeCheckout}
+              onClick={onOpenCheckout || onOpenStripeCheckout}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>Manage Purchases / Buy Credits</span>
+              <span>Choose Payment Mode & Buy</span>
             </button>
           )}
         </div>
@@ -281,7 +283,7 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
         <div className="bg-slate-800/90 border border-slate-700/80 rounded-2xl overflow-hidden divide-y divide-slate-700/60">
           {stripeTxs.length === 0 ? (
             <div className="p-6 text-center text-slate-400 text-xs">
-              No point purchases recorded yet. Buy time credits via Stripe to top up your balance!
+              No point purchases recorded yet. Buy time credits via M-Pesa, Card, or PayPal to top up your balance!
             </div>
           ) : (
             stripeTxs.map((stx) => (

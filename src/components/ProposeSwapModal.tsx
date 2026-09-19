@@ -200,7 +200,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({
                   Escrow Lock: {totalCreditsRequired} Time Credit{totalCreditsRequired > 1 ? 's' : ''}
                 </div>
                 <div className="text-[11px] opacity-80">
-                  Your Available Balance: {currentUser.timeCredits.toFixed(1)} hrs
+                  Your Available Balance: {(currentUser.timeCredits ?? 0).toFixed(1)} hrs
                 </div>
               </div>
             </div>

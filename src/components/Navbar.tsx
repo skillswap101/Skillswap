@@ -228,7 +228,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Coins className="w-4 h-4 text-amber-400" />
                 <div className="text-left">
                   <div className="text-xs font-bold leading-none text-amber-300">
-                    {currentUser.timeCredits.toFixed(1)} hrs
+                    {(currentUser.timeCredits ?? 0).toFixed(1)} hrs
                   </div>
                   {currentUser.escrowLockedCredits > 0 && (
                     <div className="text-[10px] text-slate-400 flex items-center gap-0.5 leading-none mt-0.5">

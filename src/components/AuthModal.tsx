@@ -107,15 +107,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       setIsLoading(true);
-      // If phone is provided, go through OTP verification
-      if (phone.trim()) {
-        await sendOtp(phone);
-        setMode('otp');
-        setIsLoading(false);
-        return;
-      }
-
-      await signUp(email, password, displayName);
+      await signUp(
+        email,
+        password,
+        displayName,
+        phone.trim() ? { bio: `SkillSwap Member | Mobile: ${phone.trim()}` } : {}
+      );
       setSuccessMessage('Account created successfully! Welcome to SkillSwap.');
       setTimeout(() => {
         onSuccess?.();
@@ -131,29 +128,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
+    setSuccessMessage(null);
 
-    if (otpCode.length !== 6) {
+    const code = otpCode.trim();
+
+    if (!/^\d{6}$/.test(code)) {
       setLocalError('Please enter the 6-digit verification code.');
       return;
     }
 
     try {
       setIsLoading(true);
-      const verified = await verifyOtp(otpCode);
-      if (verified) {
-        // Complete the sign-up with verified phone
-        await signUp(email, password, displayName, {
-          bio: `SkillSwap Member | Verified Mobile (${phone})`,
-        });
-        setSuccessMessage('Verification complete! Welcome to SkillSwap.');
-        setTimeout(() => {
-          clearOtpState();
-          onSuccess?.();
-          onClose();
-        }, 1200);
+
+      const verified = await verifyOtp(code);
+
+      if (!verified) {
+        setLocalError('Invalid or expired OTP code.');
+        return;
       }
+
+      // OTP verification is currently fail-closed in AuthContext.
+      // If a real Firebase phone-auth flow is enabled later,
+      // verifyOtp() can return true and account creation can proceed.
+      await signUp(email, password, displayName, {
+        bio: `SkillSwap Member | Verified Mobile (${phone})`,
+      });
+
+      setSuccessMessage('Verification complete! Welcome to SkillSwap.');
+
+      setTimeout(() => {
+        clearOtpState();
+        onSuccess?.();
+        onClose();
+      }, 1200);
     } catch (err: any) {
-      setLocalError(err.message || 'Invalid or expired OTP code.');
+      setLocalError(
+        err?.message || 'Invalid or expired OTP code.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -431,7 +442,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 text-center">
-                  Enter 6-Digit Code (Demo: use any 6 digits e.g. 123456)
+                  Enter 6-Digit Verification Code
                 </label>
                 <input
                   type="text"
@@ -485,7 +496,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </form>
           )}
 
-          {/* Quick Demo Credentials Footer */}
           <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 text-center">
             🔐 Secured by Firebase Authentication & Cloud Firestore
           </div>

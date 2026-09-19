@@ -7,6 +7,12 @@ import {
   AuditCheckResult,
   EmailNotification,
 } from '../types';
+import { auth } from '../firebase';
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export const api = {
   // Users
@@ -183,90 +189,91 @@ export const api = {
   },
 
   // Payments: Stripe
-  async createStripeSession(data: {
-    userId: string;
-    creditHours: number;
-    amountUSD: number;
-  }) {
-    const res = await fetch('/api/payments/stripe/create-checkout-session', {
+  async createStripeSession(data: { packageId: string }) {
+    const res = await fetch('/api/v1/stripe/create-checkout-session', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Failed to create Stripe session');
     }
-    return res.json();
+    return res.json() as Promise<{ success: boolean; url: string; sessionId: string; sandbox?: boolean; creditsAdded?: number }>;
   },
 
-  async verifyStripeSession(sessionId: string, userId: string) {
-    const res = await fetch(`/api/payments/stripe/verify-session/${sessionId}?userId=${userId}`);
-    if (!res.ok) throw new Error('Failed to verify Stripe session');
-    return res.json();
+  async payDirectCard(data: { packageId: string; cardLast4?: string; cardBrand?: string }) {
+    const res = await fetch('/api/v1/stripe/pay-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to process card payment');
+    }
+    return res.json() as Promise<{ success: boolean; receiptId: string; creditsAdded: number; amountUSD: number; cardBrand: string; cardLast4: string }>;
   },
 
   // Payments: M-Pesa Daraja
-  async initiateMpesaStk(data: {
-    userId: string;
-    phone: string;
-    creditHours: number;
-    amountKES: number;
-  }) {
-    const res = await fetch('/api/payments/mpesa/stkpush', {
+  async initiateMpesaStk(data: { phone: string; packageId: string }) {
+    const res = await fetch('/api/v1/mpesa/pay', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Failed to initiate M-Pesa STK Push');
     }
-    return res.json();
+    return res.json() as Promise<{ success: boolean; checkoutRequestId: string; message: string; isSandbox?: boolean }>;
   },
 
-  async queryMpesaStk(checkoutRequestId: string, userId: string) {
-    const res = await fetch(`/api/payments/mpesa/query/${checkoutRequestId}?userId=${userId}`);
-    if (!res.ok) throw new Error('Failed to query M-Pesa status');
-    return res.json();
+  // Read-only poll - never mutates a balance itself, just reports what the
+  // server-side webhook has (or hasn't) already done.
+  async getMpesaStatus(checkoutRequestId: string) {
+    const res = await fetch(`/api/v1/mpesa/status/${checkoutRequestId}`, {
+      headers: await authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to check M-Pesa payment status');
+    return res.json() as Promise<{ status: 'pending' | 'completed' | 'failed' }>;
   },
 
-  async simulateMpesaPin(checkoutRequestId: string) {
-    const res = await fetch('/api/payments/mpesa/simulate-pin', {
+  async simulateConfirmMpesa(checkoutRequestId: string) {
+    const res = await fetch('/api/v1/mpesa/simulate-confirm', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({ checkoutRequestId }),
     });
-    if (!res.ok) throw new Error('Failed to simulate M-Pesa PIN approval');
-    return res.json();
+    if (!res.ok) throw new Error('Failed to confirm simulated M-Pesa');
+    return res.json() as Promise<{ success: boolean; message: string }>;
   },
 
   // Payments: PayPal v2
-  async createPaypalOrder(data: {
-    userId: string;
-    creditHours: number;
-    amountUSD: number;
-  }) {
-    const res = await fetch('/api/payments/paypal/create-order', {
+  async createPaypalOrder(data: { packageId: string }) {
+    const res = await fetch('/api/v1/paypal/create-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Failed to create PayPal order');
     }
-    return res.json();
+    return res.json() as Promise<{ success: boolean; orderId: string; approveUrl: string; sandbox?: boolean }>;
   },
 
-  async capturePaypalOrder(orderId: string, userId: string) {
-    const res = await fetch(`/api/payments/paypal/capture-order/${orderId}`, {
+  async capturePaypalOrder(orderId: string) {
+    const res = await fetch('/api/v1/paypal/capture-order', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      body: JSON.stringify({ orderID: orderId }),
     });
-    if (!res.ok) throw new Error('Failed to capture PayPal order');
-    return res.json();
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to capture PayPal order');
+    }
+    return res.json() as Promise<{ success: boolean; captureId?: string; orderId?: string; creditsAdded?: number; status: string }>;
   },
 
   // AI
@@ -315,15 +322,16 @@ export const api = {
     results: AuditCheckResult[];
     summary: string;
   }> {
-    const res = await fetch('/api/audit/run');
+    const res = await fetch('/api/audit/run', { headers: await authHeaders() });
     if (!res.ok) throw new Error('Failed to execute audit');
     return res.json();
   },
 
-  // Email Notifications
-  async getNotifications(userId?: string): Promise<EmailNotification[]> {
-    const url = userId ? `/api/notifications?userId=${encodeURIComponent(userId)}` : '/api/notifications';
-    const res = await fetch(url);
+  // Email Notifications - userId is no longer accepted from the caller;
+  // the server derives it from the verified token, so a user can only
+  // ever read/mark/delete their own notifications.
+  async getNotifications(): Promise<EmailNotification[]> {
+    const res = await fetch('/api/notifications', { headers: await authHeaders() });
     if (!res.ok) throw new Error('Failed to fetch notifications');
     return res.json();
   },
@@ -331,16 +339,16 @@ export const api = {
   async markNotificationRead(id: string): Promise<{ success: boolean }> {
     const res = await fetch(`/api/notifications/${id}/read`, {
       method: 'PATCH',
+      headers: await authHeaders(),
     });
     if (!res.ok) throw new Error('Failed to mark notification as read');
     return res.json();
   },
 
-  async markAllNotificationsRead(userId: string): Promise<{ success: boolean; count: number }> {
+  async markAllNotificationsRead(): Promise<{ success: boolean; count: number }> {
     const res = await fetch('/api/notifications/mark-all-read', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
+      headers: await authHeaders(),
     });
     if (!res.ok) throw new Error('Failed to mark all notifications as read');
     return res.json();
@@ -349,19 +357,19 @@ export const api = {
   async deleteNotification(id: string): Promise<{ success: boolean }> {
     const res = await fetch(`/api/notifications/${id}`, {
       method: 'DELETE',
+      headers: await authHeaders(),
     });
     if (!res.ok) throw new Error('Failed to delete notification');
     return res.json();
   },
 
   async simulateTestEmail(params: {
-    recipientUserId: string;
     category: string;
     customSubject?: string;
   }): Promise<{ success: boolean; notification: EmailNotification }> {
     const res = await fetch('/api/notifications/simulate-test-email', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(params),
     });
     if (!res.ok) throw new Error('Failed to send test simulation email');

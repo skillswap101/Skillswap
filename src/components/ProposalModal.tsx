@@ -30,7 +30,7 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
   if (!targetSkill) return null;
 
   const [selectedOfferedSkill, setSelectedOfferedSkill] = useState<string>(
-    currentUser.skillsOffered[0] || 'Time Credits'
+    (currentUser.skillsOffered || [])[0] || 'Time Credits'
   );
   const [useTimeCredits, setUseTimeCredits] = useState<boolean>(false);
   const [proposedDate, setProposedDate] = useState<string>('2026-08-10');
@@ -149,7 +149,7 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
             </label>
 
             <div className="space-y-2">
-              {currentUser.skillsOffered.map((skill, idx) => (
+              {(currentUser.skillsOffered || []).map((skill, idx) => (
                 <label
                   key={idx}
                   onClick={() => {

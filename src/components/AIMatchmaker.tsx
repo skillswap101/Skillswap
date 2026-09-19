@@ -39,7 +39,7 @@ export const AIMatchmaker: React.FC<AIMatchmakerProps> = ({
   // Calculate reciprocal match logic
   const reciprocalSkills = skills.map((skill) => {
     // Check if mentor teaches what current user wants
-    const teachesWhatIWant = currentUser.skillsDesired.some(
+    const teachesWhatIWant = (currentUser.skillsDesired || []).some(
       (desired) =>
         skill.title.toLowerCase().includes(desired.toLowerCase()) ||
         skill.category.toLowerCase().includes(desired.toLowerCase()) ||
@@ -48,7 +48,7 @@ export const AIMatchmaker: React.FC<AIMatchmakerProps> = ({
 
     // Check if mentor wants what current user teaches
     const wantsWhatITeach = skill.skillsDesiredInReturn.some((desired) =>
-      currentUser.skillsOffered.some(
+      (currentUser.skillsOffered || []).some(
         (offered) =>
           offered.toLowerCase().includes(desired.toLowerCase()) ||
           desired.toLowerCase().includes(offered.toLowerCase())
@@ -130,7 +130,7 @@ export const AIMatchmaker: React.FC<AIMatchmakerProps> = ({
           </h1>
 
           <p className="text-sm text-indigo-200/90 leading-relaxed">
-            SkillSwap analyzes your offered skills ({currentUser.skillsOffered.join(', ')}) and learning goals ({currentUser.skillsDesired.join(', ')}) against community mentors to discover instant mutual fits.
+            SkillSwap analyzes your offered skills ({(currentUser.skillsOffered || []).join(', ')}) and learning goals ({(currentUser.skillsDesired || []).join(', ')}) against community mentors to discover instant mutual fits.
           </p>
 
           <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-slate-300">
