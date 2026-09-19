@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { auth } from "./firebase";
+import { db, auth } from "./firebase";
+import { collection, onSnapshot } from "firebase/firestore";
 import { AnimatePresence } from 'motion/react';
 import { 
   Header 
@@ -110,8 +111,6 @@ import {
 } from './types';
 import { Sparkles, Compass, Plus, ArrowRightLeft, Search, Clock, X, History, Award, ShieldCheck, Bookmark, Code2, Globe, Palette, Music, Dumbbell, Utensils, Layers, Briefcase, BarChart3, Calendar, Eye } from 'lucide-react';
 import { useCloudStateBridge } from "./utils/cloudStateBridge";
-import { useAuth } from './context/AuthContext';
-import { api } from './lib/api';
 
 const CATEGORIES: SkillCategory[] = [
   'All',
@@ -170,14 +169,6 @@ export default function App() {
   });
 
   // Data state
-  const {
-    currentUser: firebaseAuthUser,
-    loading: authLoading,
-    error: authError,
-    getToken,
-    logout,
-  } = useAuth();
-
   const {
     currentUser,
     setCurrentUser,
@@ -268,40 +259,6 @@ export default function App() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
-
-  // Handles the redirect back from PayPal's approval page. PayPal no
-  // longer gets captured immediately at order-creation time (that skipped
-  // the buyer ever actually approving the payment) - now we only capture
-  // once PayPal sends the buyer back here with the order id. The actual
-  // credit is added server-side inside capturePaypalOrder's real capture
-  // check; this effect just triggers that call and gives UI feedback.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('paypal_return') !== 'true') return;
-
-    const orderId = params.get('token');
-    // Clean the URL immediately so a refresh doesn't re-trigger capture.
-    window.history.replaceState({}, '', window.location.pathname);
-
-    if (!orderId) return;
-    api.capturePaypalOrder(orderId)
-      .then(() => showToast('Payment confirmed! Your credits will appear shortly.'))
-      .catch((err) => showToast(err.message || 'Could not confirm your PayPal payment.'));
-  }, []);
-
-  // Stripe redirects back here after its own hosted checkout. This is
-  // purely a UX confirmation - the actual credit was already (or will
-  // shortly be) added by Stripe's signed webhook, never by this redirect.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('stripe_success') === 'true') {
-      window.history.replaceState({}, '', window.location.pathname);
-      showToast('Payment successful! Your credits will appear shortly.');
-    } else if (params.get('stripe_cancel') === 'true') {
-      window.history.replaceState({}, '', window.location.pathname);
-      showToast('Checkout cancelled - no charge was made.');
-    }
-  }, []);
 
   const handleToggleBookmark = (skillId: string) => {
     setBookmarkedSkillIds((prev) => {
@@ -401,63 +358,44 @@ export default function App() {
     setMessages((prev) => [...prev, initialMsg]);
   };
 
-  const handleAcceptProposal = async (proposalId: string) => {
-    // Previously this built the Session object entirely client-side (and
-    // never actually set mentorId/learnerId on it - only names - which
-    // would have made the session invisible to the Firestore-scoped
-    // listeners). It also never moved any credits into escrow. Now the
-    // server does all of it atomically: locks the learner's credits (if
-    // the swap uses time credits), creates the session with correct
-    // participant ids, and updates the proposal status. The Firestore
-    // listeners in useCloudStateBridge pick up the new/changed documents
-    // automatically - no local state mutation needed here.
-    try {
-      const token = await getToken();
-      if (!token) {
-        showToast('Please sign in again to accept this proposal.');
-        return;
-      }
-      const res = await fetch(`/api/proposals/${proposalId}/accept`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        showToast(err.error || 'Could not accept this proposal.');
-        return;
-      }
-      showToast('Swap agreement confirmed! Session added to your schedule.');
-    } catch (err) {
-      console.error('[App] Failed to accept proposal:', err);
-      showToast('Something went wrong accepting this proposal. Please try again.');
-    }
+  const handleAcceptProposal = (proposalId: string) => {
+    const targetProp = proposals.find((p) => p.id === proposalId);
+    if (!targetProp) return;
+
+    setProposals(
+      proposals.map((p) => (p.id === proposalId ? { ...p, status: 'accepted' as const } : p))
+    );
+
+    // Create scheduled session
+    const newSession: Session = {
+      id: `sess_${Date.now()}`,
+      swapProposalId: proposalId,
+      title: `${targetProp.requestedSkillTitle} ↔ ${targetProp.offeredSkillTitle}`,
+      mentorName: targetProp.recipientName,
+      mentorAvatar: targetProp.recipientAvatar,
+      learnerName: targetProp.senderName,
+      learnerAvatar: targetProp.senderAvatar,
+      skillTitle: targetProp.requestedSkillTitle,
+      date: targetProp.proposedDate,
+      time: targetProp.proposedTime,
+      durationMinutes: targetProp.durationMinutes,
+      status: 'scheduled',
+      meetingUrl: `https://skillswap.app/room/${proposalId}`,
+      agenda: [
+        '00-15 mins: Introductions & learning objectives',
+        '15-30 mins: Core skill breakdown & demonstration',
+        '30-45 mins: Hands-on interactive practice',
+        '45-60 mins: Review, Q&A, and practice homework',
+      ],
+    };
+
+    setSessions([newSession, ...sessions]);
+    showToast('Swap agreement confirmed! Session added to your schedule.');
   };
 
-  const handleDeclineProposal = async (proposalId: string) => {
-    // Previously this permanently removed the proposal from local state -
-    // both parties would lose all record it ever existed, and there was
-    // no server-side check that the decliner was actually the recipient.
-    // Now it's a status change, enforced server-side.
-    try {
-      const token = await getToken();
-      if (!token) {
-        showToast('Please sign in again.');
-        return;
-      }
-      const res = await fetch(`/api/proposals/${proposalId}/decline`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        showToast(err.error || 'Could not decline this proposal.');
-        return;
-      }
-      showToast('Swap proposal declined.');
-    } catch (err) {
-      console.error('[App] Failed to decline proposal:', err);
-      showToast('Something went wrong declining this proposal. Please try again.');
-    }
+  const handleDeclineProposal = (proposalId: string) => {
+    setProposals(proposals.filter((p) => p.id !== proposalId));
+    showToast('Swap proposal declined.');
   };
 
   const handleSendMessage = (proposalId: string, text: string) => {
@@ -482,131 +420,25 @@ export default function App() {
     showToast('New skill listing published to community marketplace!');
   };
 
-  const handleCompleteSession = async (sessionId: string, ratingVal: number, feedbackVal: string) => {
-    // Previously this incremented currentUser.timeCredits directly in React
-    // state - anyone could trigger this handler (or just call setCurrentUser
-    // from devtools) to give themselves unlimited credits. Now the server
-    // verifies the caller is an actual participant in the session, releases
-    // any escrowed credits to the mentor in a single transaction, and marks
-    // the session completed - guarded so it can only ever happen once per
-    // session. The updated balance arrives via the user document listener.
-    try {
-      const token = await getToken();
-      if (!token) {
-        showToast('Please sign in again.');
-        return;
-      }
-      const res = await fetch(`/api/sessions/${sessionId}/complete`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ rating: ratingVal, feedback: feedbackVal }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        showToast(err.error || 'Could not complete this session.');
-        return;
-      }
-      showToast('Session marked complete! Time credits have been settled.');
-    } catch (err) {
-      console.error('[App] Failed to complete session:', err);
-      showToast('Something went wrong completing this session. Please try again.');
-    }
+  const handleCompleteSession = (sessionId: string, ratingVal: number, feedbackVal: string) => {
+    // Award 1 time credit
+    setCurrentUser((prev) => ({
+      ...prev,
+      timeCredits: prev.timeCredits + 1,
+      hoursTaught: prev.hoursTaught + 1,
+    }));
+
+    setSessions(sessions.filter((s) => s.id !== sessionId));
+    showToast('Session completed! +1 Time Credit added to your balance.');
   };
 
-  const pendingCount = currentUser
-    ? proposals.filter((p) => p.status === 'pending' && p.recipientId === currentUser.id).length
-    : 0;
-
-  // ------------------------------------------------------------------
-  // PHASE 3 AUTHENTICATION GATE
-  //
-  // Firebase Auth is the only source of authenticated identity.
-  // Never render the protected marketplace with a null user.
-  // ------------------------------------------------------------------
-
-  if (authLoading || cloudLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6">
-        <div className="w-full max-w-md text-center space-y-5">
-          <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
-            <Sparkles className="w-7 h-7 text-indigo-400 animate-pulse" />
-          </div>
-
-          <div>
-            <h1 className="text-xl font-black text-white">
-              Loading SkillSwap
-            </h1>
-            <p className="mt-2 text-sm text-slate-400">
-              Restoring your secure Firebase session and synchronizing your profile…
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!firebaseAuthUser || !cloudAuthenticated || !currentUser) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6">
-        <div className="w-full max-w-md">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-7 shadow-2xl text-center space-y-5">
-            <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
-              <ShieldCheck className="w-7 h-7 text-indigo-400" />
-            </div>
-
-            <div>
-              <h1 className="text-2xl font-black text-white">
-                Sign in to SkillSwap
-              </h1>
-
-              <p className="mt-2 text-sm text-slate-400 leading-relaxed">
-                Your SkillSwap profile, swaps, messages, sessions and time
-                credits are protected by Firebase Authentication.
-              </p>
-            </div>
-
-            {(authError || cloudError) && (
-              <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
-                {authError || cloudError}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white font-bold text-sm rounded-xl shadow-lg transition-all active:scale-[0.98]"
-            >
-              Sign In / Create Account
-            </button>
-          </div>
-
-          <AuthModal
-            isOpen={isAuthModalOpen}
-            onClose={() => setIsAuthModalOpen(false)}
-            onSuccess={() => {
-              setIsAuthModalOpen(false);
-              showToast('Authentication successful. Welcome to SkillSwap!');
-            }}
-          />
-        </div>
-      </div>
-    );
-  }
+  const pendingCount = proposals.filter((p) => p.status === 'pending' && p.recipientId === currentUser.id).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
       {/* Global Real-time Notification Listener & Email Alert Triggers */}
-      <GlobalNotificationListener
-        currentUser={currentUser}
-        proposals={proposals}
-        messages={messages}
-        showToast={showToast}
-        setActiveTab={setActiveTab}
-      />
+      <GlobalNotificationListener currentUser={currentUser} />
       <EmailToastAlert />
 
       {/* Top Navigation */}
@@ -968,25 +800,10 @@ export default function App() {
                       Show All Skills
                     </button>
                   </>
-                ) : skills.length === 0 ? (
-                  <>
-                    <Compass className="w-12 h-12 text-indigo-400/80 mx-auto" />
-                    <h3 className="text-base font-bold text-slate-200">No Skills in Community Yet</h3>
-                    <p className="text-xs text-slate-400 max-w-md mx-auto">
-                      Your live database is connected and ready. Share your knowledge or offer a skill to get the marketplace started!
-                    </p>
-                    <button
-                      onClick={() => setIsPostSkillOpen(true)}
-                      className="mt-3 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-500/20 transition-all inline-flex items-center gap-2"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Post the First Skill
-                    </button>
-                  </>
                 ) : (
                   <>
                     <Compass className="w-10 h-10 text-slate-600 mx-auto" />
-                    <h3 className="text-base font-bold text-slate-200">No Matching Skills Found</h3>
+                    <h3 className="text-base font-bold text-slate-200">No Skills Found</h3>
                     <p className="text-xs text-slate-400">Try adjusting your search query or selected category filter.</p>
                   </>
                 )}
@@ -1062,7 +879,7 @@ export default function App() {
           <MySwapsView
             currentUser={currentUser}
             proposals={proposals}
-            sessions={sessions.filter((s) => s.status !== 'completed' && s.status !== 'cancelled')}
+            sessions={sessions}
             onAcceptProposal={handleAcceptProposal}
             onDeclineProposal={handleDeclineProposal}
             onOpenSessionRoom={(sess) => setActiveSessionRoom(sess)}
@@ -1126,31 +943,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <PeerRatingsChart reviews={reviews} />
-              {/*
-                SwapContractsView expects a `swaps: SwapContract[]` prop
-                plus onRefresh/onEnterLiveStudio/onOpenCheckout - none of
-                which were ever passed here. `swaps` was `undefined`, so
-                `swaps.filter(...)` inside the component threw immediately
-                on render - this tab crashed for every real user who
-                opened it. The SwapContract data model it's built around
-                (formal contracts, multi-stage escrow with dispute
-                mediation, calendar sync, certificates) has no backend
-                anywhere in this project - unlike Session/SwapProposal,
-                which now has real, working escrow (see Session
-                management flow above). Passing an empty array here stops
-                the crash and shows a real (accurate) empty state instead
-                of fabricating data. Building the SwapContract feature out
-                for real is a separate, sizable feature addition - it
-                should NOT be done as a quick patch alongside a
-                security/correctness pass.
-              */}
-              <SwapContractsView
-                currentUser={currentUser}
-                swaps={[]}
-                onRefresh={() => {}}
-                onEnterLiveStudio={() => showToast('Live studio is not available yet.')}
-                onOpenCheckout={() => setIsUnifiedCheckoutOpen(true)}
-              />
+              <SwapContractsView currentUser={currentUser} proposals={proposals} />
             </div>
           </div>
         )}
@@ -1279,9 +1072,6 @@ export default function App() {
           setCurrentUser((prev) => ({ ...prev, ...updated }));
         }}
         onOpenTermsPrivacy={() => setIsTermsPrivacyOpen(true)}
-        onLogout={() => {
-          logout().catch((err) => console.error('[App] Logout failed:', err));
-        }}
         showToast={showToast}
       />
 
@@ -1294,11 +1084,8 @@ export default function App() {
         isOpen={isStripeCheckoutOpen}
         onClose={() => setIsStripeCheckoutOpen(false)}
         currentUser={currentUser}
-        onAddCredits={() => {
-          // Real crediting happens server-side only, after a verified
-          // payment (Stripe webhook / M-Pesa callback / PayPal capture).
-          // This callback is UI feedback only now - the actual balance
-          // arrives via the live Firestore user listener.
+        onAddCredits={(amount) => {
+          setCurrentUser((prev) => ({ ...prev, timeCredits: prev.timeCredits + amount }));
         }}
         showToast={showToast}
       />
@@ -1307,10 +1094,6 @@ export default function App() {
         isOpen={isUnifiedCheckoutOpen}
         onClose={() => setIsUnifiedCheckoutOpen(false)}
         currentUser={currentUser}
-        onSuccess={() => {
-          // Same as above - no local mutation, just lets the modal show
-          // its success/confetti state. Balance updates via the listener.
-        }}
         showToast={showToast}
       />
 
@@ -1326,19 +1109,17 @@ export default function App() {
         onClose={() => setIsAuditDashboardOpen(false)}
       />
 
-      {isBadgesModalOpen && (
-        <BadgesAndAchievementsModal
-          onClose={() => setIsBadgesModalOpen(false)}
-          user={currentUser}
-        />
-      )}
+      <BadgesAndAchievementsModal
+        isOpen={isBadgesModalOpen}
+        onClose={() => setIsBadgesModalOpen(false)}
+        currentUser={currentUser}
+      />
 
-      {isPortfolioModalOpen && (
-        <PortfolioShowcaseModal
-          onClose={() => setIsPortfolioModalOpen(false)}
-          user={currentUser}
-        />
-      )}
+      <PortfolioShowcaseModal
+        isOpen={isPortfolioModalOpen}
+        onClose={() => setIsPortfolioModalOpen(false)}
+        currentUser={currentUser}
+      />
 
       <AuthModal
         isOpen={isAuthModalOpen}
