@@ -36,8 +36,6 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
   onClose,
   onCompleteSession,
 }) => {
-  if (!session) return null;
-
   const [isVideoOn, setIsVideoOn] = useState<boolean>(true);
   const [isMicOn, setIsMicOn] = useState<boolean>(true);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
@@ -149,6 +147,8 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
     setShowCompletionModal(false);
     onClose();
   };
+
+  if (!session) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-lg overflow-y-auto">

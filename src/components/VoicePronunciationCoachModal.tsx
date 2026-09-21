@@ -66,8 +66,6 @@ export const VoicePronunciationCoachModal: React.FC<VoicePronunciationCoachModal
   isOpen,
   onClose,
 }) => {
-  if (!isOpen) return null;
-
   const [selectedLanguage, setSelectedLanguage] = useState<string>('Spanish');
   const [selectedScenario, setSelectedScenario] = useState(PRACTICE_SCENARIOS[0]);
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -171,6 +169,8 @@ export const VoicePronunciationCoachModal: React.FC<VoicePronunciationCoachModal
       window.speechSynthesis.speak(utterance);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/90 backdrop-blur-xl overflow-y-auto">

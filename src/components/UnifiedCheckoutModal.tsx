@@ -87,8 +87,6 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
     }
   }, [isOpen, initialGateway, initialPackageId]);
 
-  if (!isOpen) return null;
-
   const triggerConfetti = () => {
     try {
       confetti({
@@ -266,6 +264,8 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
       setErrorMessage(err.message || 'PayPal checkout failed. Please retry.');
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div id="unified-checkout-modal-overlay" className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
