@@ -1,4 +1,5 @@
-import fetch from 'node-fetch';
+// Use native fetch (Node 18+)
+const fetch = globalThis.fetch;
 
 // Configuration (Use sandbox keys for testing, change to api.safaricom.co.ke for production)
 const BASE_URL = 'https://sandbox.safaricom.co.ke';

@@ -1,5 +1,6 @@
 import express from 'express';
-import fetch from 'node-fetch';
+// Use native fetch (Node 18+)
+const fetch = globalThis.fetch;
 import dotenv from 'dotenv';
 import { authenticateUser } from './middleware/auth.js';
 import { getPackageById } from './server/packageCatalog.js';
