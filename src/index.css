@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+@source "../index.html";
+@source "../src/**/*.{js,ts,jsx,tsx}";
+
 @theme {
   --color-brand-green: #008751;
   --color-brand-darkGreen: #006e41;

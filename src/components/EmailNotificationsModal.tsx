@@ -27,6 +27,7 @@ interface EmailNotificationsModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserProfile;
+  showToast?: (msg: string) => void;
   onNavigateToTab?: (tab: 'marketplace' | 'swaps' | 'live_room' | 'wallet' | 'audit') => void;
 }
 

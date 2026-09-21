@@ -194,6 +194,9 @@ export default function App() {
     loading: cloudLoading,
     authenticated: cloudAuthenticated,
     error: cloudError,
+    addSkillToCloud,
+    addProposalToCloud,
+    addMessageToCloud,
   } = useCloudStateBridge();
 
   // Modal controls
@@ -386,6 +389,7 @@ export default function App() {
     };
 
     setProposals([newProp, ...proposals]);
+    addProposalToCloud(newProp).catch((err) => console.warn('[App] Proposal cloud save warning:', err));
     showToast(`Proposal sent to ${newProp.recipientName}!`);
 
     // Add initial message
@@ -399,6 +403,7 @@ export default function App() {
       timestamp: 'Just now',
     };
     setMessages((prev) => [...prev, initialMsg]);
+    addMessageToCloud(initialMsg).catch((err) => console.warn('[App] Initial message cloud save warning:', err));
   };
 
   const handleAcceptProposal = async (proposalId: string) => {
@@ -471,10 +476,12 @@ export default function App() {
       timestamp: 'Just now',
     };
     setMessages([...messages, newMsg]);
+    addMessageToCloud(newMsg).catch((err) => console.warn('[App] Message cloud save warning:', err));
   };
 
   const handleAddSkill = (newSkill: Skill) => {
     setSkills([newSkill, ...skills]);
+    addSkillToCloud(newSkill).catch((err) => console.warn('[App] Skill cloud save warning:', err));
     setCurrentUser({
       ...currentUser,
       skillsOffered: [...currentUser.skillsOffered, newSkill.title],

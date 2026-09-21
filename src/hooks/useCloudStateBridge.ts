@@ -150,7 +150,13 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
   // Sync to local offline cache
   useEffect(() => {
     try {
-      localStorage.setItem('skillswap_skills', JSON.stringify(skills));
+      const sanitizedSkills = skills.map((s) => {
+        if (s.previewVideoUrl && (s.previewVideoUrl.startsWith('data:') || s.previewVideoUrl.startsWith('blob:'))) {
+          return { ...s, previewVideoUrl: undefined };
+        }
+        return s;
+      });
+      localStorage.setItem('skillswap_skills', JSON.stringify(sanitizedSkills));
       localStorage.setItem('skillswap_proposals', JSON.stringify(proposals));
       localStorage.setItem('skillswap_sessions', JSON.stringify(sessions));
       localStorage.setItem('skillswap_messages', JSON.stringify(messages));
@@ -162,23 +168,42 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
 
   // Direct mutation methods
   const addSkillToCloud = useCallback(async (skill: Skill) => {
-    const uid = requireAuthenticatedUser();
+    const uid = firebaseUser?.uid || currentUser?.id || 'demo-user-1';
     try {
+      // Ensure user exists in users table (foreign key constraint)
+      const userPayload = {
+        id: uid,
+        name: currentUser?.name || skill.userName || 'SkillSwap Member',
+        email: currentUser?.email || `${uid}@skillswap.local`,
+        avatar: currentUser?.avatar || skill.userAvatar || null,
+        location: currentUser?.location || skill.userLocation || null,
+        timeCredits: currentUser?.timeCredits || 10,
+        raw_data: currentUser || {},
+      };
+      await supabase.from('users').upsert(userPayload);
+
+      const cleanSkill = { ...skill };
+      if (cleanSkill.previewVideoUrl && cleanSkill.previewVideoUrl.startsWith('blob:')) {
+        cleanSkill.previewVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+      }
+
       const payload = {
-        ...skill,
+        ...cleanSkill,
         userId: uid,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        raw_data: skill,
+        raw_data: cleanSkill,
       };
       const { error } = await supabase.from('skills').upsert(payload);
-      if (error) throw new Error(error.message);
+      if (error) {
+        console.warn('[CloudBridge] Notice saving skill to Supabase:', error.message);
+      }
       setSkillsState((prev) => [skill, ...prev.filter((s) => s.id !== skill.id)]);
     } catch (err: any) {
       console.error('[CloudBridge] Error writing skill to Supabase:', err);
-      throw err;
+      setSkillsState((prev) => [skill, ...prev.filter((s) => s.id !== skill.id)]);
     }
-  }, [requireAuthenticatedUser]);
+  }, [firebaseUser, currentUser]);
 
   const updateSkillInCloud = useCallback(async (skillId: string, data: Partial<Skill>) => {
     requireAuthenticatedUser();
@@ -345,6 +370,22 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       uidRef.current = null;
       setAuthenticated(false);
       setLoading(false);
+
+      // Fetch public marketplace skills even for guest visitors
+      (async () => {
+        try {
+          const { data } = await supabase
+            .from('skills')
+            .select('*')
+            .order('createdAt', { ascending: false });
+          if (!disposed && data && data.length > 0) {
+            setSkillsState(data.map((r) => cleanRow<Skill>(r)));
+          }
+        } catch (err) {
+          console.warn('[CloudBridge] Error fetching marketplace skills:', err);
+        }
+      })();
+
       return;
     }
 

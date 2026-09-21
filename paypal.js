@@ -37,6 +37,20 @@ async function getPayPalAccessToken() {
     return data.access_token;
 }
 
+function getFrontendUrl(req) {
+    if (process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost')) {
+        return process.env.FRONTEND_URL.replace(/\/$/, '');
+    }
+    const origin = req.get('origin') || req.get('referer');
+    if (origin) {
+        try {
+            const u = new URL(origin);
+            return `${u.protocol}//${u.host}`;
+        } catch {}
+    }
+    return process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '';
+}
+
 // 1. Create Order Endpoint. Requires a verified user; the order is created
 // with a return_url that sends the buyer to PayPal's own approval page.
 router.post('/api/v1/paypal/create-order', authenticateUser, express.json(), async (req, res) => {
@@ -47,7 +61,7 @@ router.post('/api/v1/paypal/create-order', authenticateUser, express.json(), asy
             return res.status(400).json({ success: false, error: 'Unknown packageId' });
         }
 
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendUrl = getFrontendUrl(req);
 
         if (!isPaypalConfigured()) {
             console.log('[PayPal] Running in Sandbox / Simulator mode (PayPal credentials not configured)');
@@ -64,7 +78,7 @@ router.post('/api/v1/paypal/create-order', authenticateUser, express.json(), asy
             return res.json({
                 success: true,
                 orderId: simOrderId,
-                approveUrl: `${frontendUrl}/dashboard?paypal_return=true&token=${simOrderId}&sandbox=true`,
+                approveUrl: `${frontendUrl}/?paypal_return=true&token=${simOrderId}&sandbox=true`,
                 sandbox: true,
                 message: 'Sandbox PayPal order created',
             });
@@ -86,8 +100,8 @@ router.post('/api/v1/paypal/create-order', authenticateUser, express.json(), asy
                     }
                 }],
                 application_context: {
-                    return_url: `${frontendUrl}/dashboard?paypal_return=true`,
-                    cancel_url: `${frontendUrl}/dashboard?paypal_cancel=true`,
+                    return_url: `${frontendUrl}/?paypal_return=true`,
+                    cancel_url: `${frontendUrl}/?paypal_cancel=true`,
                     user_action: 'PAY_NOW',
                 },
             })

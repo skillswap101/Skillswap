@@ -3,15 +3,15 @@ import { Mail, X, ArrowRight, Sparkles, CheckCircle2, AlertCircle } from 'lucide
 import { EmailNotification } from '../types';
 
 interface EmailToastAlertProps {
-  notification: EmailNotification | null;
-  onClose: () => void;
-  onOpenInbox: () => void;
+  notification?: EmailNotification | null;
+  onClose?: () => void;
+  onOpenInbox?: () => void;
 }
 
 export const EmailToastAlert: React.FC<EmailToastAlertProps> = ({
-  notification,
-  onClose,
-  onOpenInbox,
+  notification = null,
+  onClose = () => {},
+  onOpenInbox = () => {},
 }) => {
   useEffect(() => {
     if (!notification) return;

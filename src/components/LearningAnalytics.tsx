@@ -20,6 +20,8 @@ import {
   Legend,
 } from 'recharts';
 
+import { User, Session } from '../types';
+
 interface AnalyticsPoint {
   date: string;
   hoursTaught: number;
@@ -74,7 +76,12 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label })
   return null;
 };
 
-export const LearningAnalytics: React.FC = () => {
+interface LearningAnalyticsProps {
+  currentUser?: User;
+  sessions?: Session[];
+}
+
+export const LearningAnalytics: React.FC<LearningAnalyticsProps> = ({ currentUser, sessions }) => {
   const [activeMetric, setActiveMetric] = useState<'all' | 'hours' | 'credits'>('all');
 
   const latestData = LAST_30_DAYS_DATA[LAST_30_DAYS_DATA.length - 1];

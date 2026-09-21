@@ -59,7 +59,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
       const res = await fetch('/api/ai/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userQuery: userMsg, contextSkill: currentUser.offeredSkills[0] || 'General' }),
+        body: JSON.stringify({ userQuery: userMsg, contextSkill: currentUser.skillsOffered?.[0] || 'General' }),
       });
 
       if (!res.ok) throw new Error('Network error');

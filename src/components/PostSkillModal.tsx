@@ -30,6 +30,29 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
   const [skillsDesiredInput, setSkillsDesiredInput] = useState('');
   const [selectedImage, setSelectedImage] = useState(PRESET_IMAGES[0]);
   const [previewVideoUrl, setPreviewVideoUrl] = useState('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+  const [uploadedVideoName, setUploadedVideoName] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
+
+  const handleVideoFile = (file: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('video/')) {
+      setVideoError('Please choose a valid video file (MP4, WebM, etc.)');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setVideoError('Video file exceeds 50MB. Please choose a smaller preview clip or paste a video link.');
+      return;
+    }
+    setVideoError(null);
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewVideoUrl(objectUrl);
+      setUploadedVideoName(file.name);
+    } catch (err: any) {
+      console.error('Failed to create preview object URL:', err);
+      setVideoError('Could not process video file for preview.');
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,20 +252,18 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
                     accept="video/*"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          if (typeof reader.result === 'string') {
-                            setPreviewVideoUrl(reader.result);
-                          }
-                        };
-                        reader.readAsDataURL(file);
-                      }
+                      if (file) handleVideoFile(file);
                     }}
                     className="hidden"
                   />
                 </label>
               </div>
+
+              {videoError && (
+                <p className="text-[11px] text-rose-400 font-medium bg-rose-950/40 p-2 rounded-lg border border-rose-800/50">
+                  {videoError}
+                </p>
+              )}
 
               {/* Drag and Drop Box */}
               <div
@@ -250,21 +271,15 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
                 onDrop={(e) => {
                   e.preventDefault();
                   const file = e.dataTransfer.files?.[0];
-                  if (file && file.type.startsWith('video/')) {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      if (typeof reader.result === 'string') {
-                        setPreviewVideoUrl(reader.result);
-                      }
-                    };
-                    reader.readAsDataURL(file);
-                  }
+                  if (file) handleVideoFile(file);
                 }}
                 className="p-3 border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-xl bg-slate-950/40 text-center transition-colors cursor-pointer group"
               >
                 <div className="flex items-center justify-center gap-2 text-slate-400 group-hover:text-indigo-300">
                   <Film className="w-4 h-4 text-indigo-400" />
-                  <span className="text-[11px] font-semibold">Drag & Drop MP4 / WebM Video File Here</span>
+                  <span className="text-[11px] font-semibold">
+                    {uploadedVideoName ? `Selected: ${uploadedVideoName}` : 'Drag & Drop MP4 / WebM Video File Here'}
+                  </span>
                 </div>
               </div>
 

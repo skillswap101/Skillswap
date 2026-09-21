@@ -250,10 +250,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="p-6 space-y-4">
           
           {/* Error Banner */}
-          {(localError || authError || otpState.error) && (
+          {(localError || authError) && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2 text-xs text-rose-600 dark:text-rose-400">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{localError || authError || otpState.error}</span>
+              <span>{localError || authError}</span>
             </div>
           )}
 

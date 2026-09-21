@@ -189,7 +189,9 @@ export const SkillCard: React.FC<SkillCardProps> = ({
                 <p className="text-xs font-medium text-slate-200 line-clamp-1">{skill.userName}</p>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="Online" />
                 {isVerifiedMentor && (
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" title="5+ Sessions Completed" />
+                  <span title="5+ Sessions Completed" className="inline-flex">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  </span>
                 )}
               </div>
               <div className="flex items-center gap-1 text-[11px] text-amber-400">

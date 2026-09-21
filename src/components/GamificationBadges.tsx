@@ -16,6 +16,8 @@ import {
   HelpCircle
 } from 'lucide-react';
 
+import { User } from '../types';
+
 export interface GamificationBadgeItem {
   id: string;
   title: string;
@@ -122,7 +124,11 @@ const GAMIFICATION_BADGES: GamificationBadgeItem[] = [
   }
 ];
 
-export const GamificationBadges: React.FC = () => {
+interface GamificationBadgesProps {
+  currentUser?: User;
+}
+
+export const GamificationBadges: React.FC<GamificationBadgesProps> = ({ currentUser }) => {
   const [filterCategory, setFilterCategory] = useState<'all' | 'unlocked' | 'locked'>('all');
   const [selectedBadge, setSelectedBadge] = useState<GamificationBadgeItem | null>(null);
 

@@ -24,6 +24,20 @@ function isStripeConfigured() {
   return Boolean(key && !key.includes('YOUR_') && !key.includes('placeholder') && key.startsWith('sk_'));
 }
 
+function getFrontendUrl(req) {
+  if (process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('localhost')) {
+    return process.env.FRONTEND_URL.replace(/\/$/, '');
+  }
+  const origin = req.get('origin') || req.get('referer');
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      return `${u.protocol}//${u.host}`;
+    } catch {}
+  }
+  return process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '';
+}
+
 // 1. Create Stripe Checkout Session.
 // Previously accepted `credits` and `price` directly from the client -
 // meaning the amount actually charged and the credits actually granted
@@ -39,6 +53,8 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
     if (!pkg) {
       return res.status(400).json({ success: false, error: 'Unknown packageId' });
     }
+
+    const frontendUrl = getFrontendUrl(req);
 
     if (isStripeConfigured()) {
       const stripe = getStripe();
@@ -58,8 +74,8 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
           },
         ],
         mode: 'payment',
-        success_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard?stripe_success=true&credits=${pkg.hours}`,
-        cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard?stripe_cancel=true`,
+        success_url: `${frontendUrl}/?stripe_success=true&credits=${pkg.hours}`,
+        cancel_url: `${frontendUrl}/?stripe_cancel=true`,
         metadata: {
           userId,
           packageId: pkg.id,
@@ -92,10 +108,9 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
       // Instantly fulfill in sandbox mode
       await fulfillPendingPayment('stripe', simSessionId, `STRIPE_SIM_${Date.now()}`);
 
-      const frontendUrl = process.env.FRONTEND_URL || '';
       return res.status(200).json({
         success: true,
-        url: `${frontendUrl}/dashboard?stripe_success=true&credits=${pkg.hours}&sandbox=true`,
+        url: `${frontendUrl}/?stripe_success=true&credits=${pkg.hours}&sandbox=true`,
         sessionId: simSessionId,
         sandbox: true,
         creditsAdded: pkg.hours,

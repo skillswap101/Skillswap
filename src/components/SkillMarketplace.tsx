@@ -127,7 +127,9 @@ export const SkillMarketplace: React.FC<SkillMarketplaceProps> = ({
         const matchCategory = item.category?.toLowerCase().includes(q);
         const matchSyllabus = item.syllabus?.some(s => s.toLowerCase().includes(q));
         const matchLocation = item.user?.location?.toLowerCase().includes(q);
-        const matchSkillsExchanged = item.skillsExchanged?.some(s => s.toLowerCase().includes(q));
+        const matchSkillsExchanged = Array.isArray(item.skillsExchanged)
+          ? item.skillsExchanged.some(s => typeof s === 'string' && s.toLowerCase().includes(q))
+          : false;
 
         if (
           !matchTitle &&
