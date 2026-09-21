@@ -121,7 +121,14 @@ const expensiveLimiter = rateLimit({
 });
 
 // Mount API Routers
-app.use(express.json({ limit: '1mb' }));
+app.use(
+  express.json({
+    limit: '1mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = Buffer.from(buf);
+    },
+  })
+);
 
 // Migration and repair files direct download endpoints
 app.get('/download/skillswap.zip', (_req, res) => {
@@ -192,6 +199,28 @@ app.post("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: Authenti
 
     const uid = req.user!.uid;
     const body = req.body || {};
+
+    // Enforce object-level authorization before service-side upsert
+    if (collectionName === 'users' && id !== uid) {
+      return res.status(403).json({ error: 'Cannot modify another user profile' });
+    }
+    if (collectionName === 'users') {
+      delete body.timeCredits;
+      delete body.escrowLockedCredits;
+    }
+    if (collectionName === 'skills' && body.userId && body.userId !== uid) {
+      return res.status(403).json({ error: 'Cannot write a skill for another user' });
+    }
+    if (['proposals', 'sessions', 'messages'].includes(collectionName)) {
+      const participants = Array.isArray(body.participantIds) ? body.participantIds : [];
+      const actors = [body.senderId, body.recipientId, body.mentorId, body.learnerId, ...participants].filter(Boolean);
+      if (actors.length > 0 && !actors.includes(uid)) {
+        return res.status(403).json({ error: 'Not a participant in this record' });
+      }
+    }
+    if (collectionName === 'reviews' && body.authorId && body.authorId !== uid) {
+      return res.status(403).json({ error: 'Review author mismatch' });
+    }
 
     const payload = {
       id,
@@ -374,36 +403,10 @@ app.post("/api/ai/learning-roadmap", verifyFirebaseToken, expensiveLimiter, asyn
 });
 
 // ===== Guarded escrow ledger creation =====
-app.post("/api/escrow/transfer", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-    const { amount, recipientId, proposalId, currency = "usd" } = req.body || {};
-    const numericAmount = Number(amount);
-
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0)
-      return res.status(400).json({ error: "Amount must be positive" });
-    if (!recipientId || recipientId === uid)
-      return res.status(400).json({ error: "Valid recipientId is required" });
-
-    const transaction = {
-      userId: uid,
-      recipientId,
-      proposalId: proposalId || null,
-      amount: numericAmount,
-      currency,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    const { data: insertedEscrow } = await supabase
-      .from("escrowTransactions")
-      .insert(transaction)
-      .select()
-      .single();
-    return res.status(201).json({ success: true, transaction });
-  } catch (error) {
-    console.error("Escrow error:", error);
-    return res.status(500).json({ error: "Escrow transaction could not be created" });
-  }
+app.post("/api/escrow/transfer", verifyFirebaseToken, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.status(410).json({
+    error: "Legacy escrow transfer endpoint disabled. Proposal and session escrow is managed automatically by the service."
+  });
 });
 
 // ===== WebRTC signaling persistence =====

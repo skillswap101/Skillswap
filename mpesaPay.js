@@ -2,7 +2,7 @@ import express from 'express';
 import { initiateSTKPush } from './mpesa.js';
 import { authenticateUser } from './middleware/auth.js';
 import { getPackageById } from './server/packageCatalog.js';
-import { createPendingPayment, getPendingPaymentStatus } from './server/services/paymentsService.js';
+import { createPendingPayment, getPendingPaymentStatus, getPendingPayment, fulfillPendingPayment } from './server/services/paymentsService.js';
 
 const router = express.Router();
 
@@ -99,12 +99,28 @@ router.get('/api/v1/mpesa/status/:checkoutRequestId', authenticateUser, async (r
     }
 });
 
-// Instant confirm for sandbox/test mode
+// Instant confirm for sandbox/test mode (Gated behind environment flag and ownership check)
 router.post('/api/v1/mpesa/simulate-confirm', authenticateUser, express.json(), async (req, res) => {
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
+        return res.status(404).json({ error: 'Payment simulator disabled in production' });
+    }
+
     try {
         const { checkoutRequestId } = req.body;
-        if (!checkoutRequestId) return res.status(400).json({ error: 'checkoutRequestId is required' });
-        await fulfillPendingPayment('mpesa', checkoutRequestId, `MPESA_CONFIRMED_${Date.now()}`);
+        if (!checkoutRequestId) {
+            return res.status(400).json({ error: 'checkoutRequestId is required' });
+        }
+
+        const pending = await getPendingPayment('mpesa', checkoutRequestId);
+        if (!pending) {
+            return res.status(404).json({ error: 'Payment not found' });
+        }
+
+        if (pending.userId !== req.user.uid) {
+            return res.status(403).json({ error: 'Payment does not belong to caller' });
+        }
+
+        await fulfillPendingPayment('mpesa', checkoutRequestId, `MPESA_SIM_${Date.now()}`);
         return res.json({ success: true, message: 'Simulated M-Pesa payment confirmed.' });
     } catch (error) {
         return res.status(500).json({ error: error.message });

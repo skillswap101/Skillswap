@@ -62,38 +62,11 @@ export const authenticateUser = async (req, res, next) => {
 
     return next();
   } catch (error) {
-    console.warn('[Auth Middleware] Firebase verifyIdToken warning:', error.message || error);
-    
-    try {
-      const parts = idToken.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        const now = Math.floor(Date.now() / 1000);
-        
-        const isFirebaseIssuer = payload.iss && (
-          payload.iss.includes('securetoken.google.com') || 
-          payload.iss.includes(projectId)
-        );
-        const uid = payload.user_id || payload.sub;
-
-        if (uid && (isFirebaseIssuer || payload.aud === projectId)) {
-          if (!payload.exp || payload.exp > (now - 86400)) {
-            req.user = {
-              uid,
-              email: payload.email || '',
-              role: payload.role || 'user'
-            };
-            return next();
-          }
-        }
-      }
-    } catch (parseErr) {
-      console.warn('[Auth Middleware] Token parse notice:', parseErr.message);
-    }
+    console.warn('[Auth Middleware] Firebase token verification failed:', error.message || error);
 
     if (error.code === 'auth/id-token-revoked') {
       return res.status(401).json({ error: 'Unauthorized: Token has been revoked' });
     }
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired Firebase token' });
   }
 };

@@ -123,42 +123,12 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
   }
 });
 
-// 2. Direct Card Payment Endpoint (supports fast in-modal card processing)
-router.post('/api/v1/stripe/pay-card', authenticateUser, express.json(), async (req, res) => {
-  try {
-    const { packageId, cardLast4, cardBrand } = req.body;
-    const userId = req.user.uid;
-
-    const pkg = getPackageById(packageId);
-    if (!pkg) {
-      return res.status(400).json({ success: false, error: 'Unknown packageId' });
-    }
-
-    const receiptId = `ch_card_${Date.now()}`;
-    await createPendingPayment({
-      gateway: 'stripe',
-      gatewayRef: receiptId,
-      userId,
-      creditHours: pkg.hours,
-      amount: pkg.priceUSD,
-      currency: 'USD',
-    });
-
-    await fulfillPendingPayment('stripe', receiptId, receiptId);
-
-    return res.status(200).json({
-      success: true,
-      receiptId,
-      creditsAdded: pkg.hours,
-      amountUSD: pkg.priceUSD,
-      cardBrand: cardBrand || 'Visa',
-      cardLast4: cardLast4 || '4242',
-      message: 'Card payment processed successfully.',
-    });
-  } catch (error) {
-    console.error('Direct Card Payment Error:', error);
-    res.status(500).json({ success: false, error: error.message || 'Payment failed' });
-  }
+// 2. Direct Card Payment Endpoint (Disabled: direct card fulfillment without gateway charge is insecure)
+router.post('/api/v1/stripe/pay-card', authenticateUser, express.json(), async (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Direct card processing is disabled. Use Stripe Checkout or PaymentIntent.'
+  });
 });
 
 // 2. Stripe Webhook for Asynchronous Fulfillment.
@@ -180,7 +150,7 @@ router.post('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }),
   let event;
   try {
     const stripe = getStripe();
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    event = stripe.webhooks.constructEvent(req.rawBody || req.body, sig, endpointSecret);
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
