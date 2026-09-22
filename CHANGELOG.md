@@ -4,6 +4,18 @@ All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
 ### Added
+- **SkillSwap 5.0 Master Protocol & GitHub Agent Directives (`/docs/MASTER_AGENT_INSTRUCTIONS.md`, `/.github/copilot-instructions.md`)**: Codified the complete 52-section operational mandate, 7-phase roadmap, and continuous communication & escalation protocol.
+- **Phase 0 Comprehensive Production Audit Suite**:
+  - `AUDIT_REPORT.md`: Master production audit synthesizing all subsystem findings.
+  - `docs/ARCHITECTURE_AUDIT.md`: Structural topology, module boundaries, data flow, and separation of concerns.
+  - `docs/SECURITY_AUDIT.md`: Vulnerability analysis covering BOLA/IDOR, credentials, and authentication.
+  - `docs/MOCK_DATA_AUDIT.md`: Inventory and eradication protocol for mock data, demo users, and fake records.
+  - `docs/API_AUDIT.md`: Catalog of all 24 REST endpoints, auth gates, rate limiting, and missing route definitions.
+  - `docs/DATABASE_AUDIT.md`: Analysis of Supabase PostgreSQL schema, missing indexes, and wildcard RLS policies.
+  - `docs/PAYMENT_AUDIT.md`: Stripe, M-Pesa, PayPal, and Escrow financial integrity audit.
+  - `docs/FRONTEND_AUDIT.md`: Component hierarchy, React 19 compatibility, and mobile responsiveness.
+  - `docs/PRODUCTION_READINESS.md`: Production readiness assessment and environment configuration matrix.
+  - `docs/REMEDIATION_PLAN.md`: Prioritized remediation roadmap spanning P0 (critical security) to P3.
 - **Modern Typography & Glassmorphic Design (`index.html`, `src/index.css`)**: Integrated Google Fonts (Plus Jakarta Sans for display headings, Inter for high-density UI readability), subtle radial grid patterns, and glassmorphism panel styles.
 - **Centralized Modal Architecture (`src/hooks/useModalManager.ts`)**: Built a unified modal management hook to decouple global dialog states and streamline `App.tsx` state footprint.
 - **Export Codebase ZIP (`src/components/SettingsHubModal.tsx`)**: Relocated repository backup download into Settings Hub to preserve clean navigation bar ergonomics.
