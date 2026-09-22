@@ -657,15 +657,18 @@ export default function App() {
           <div className="space-y-8 animate-in fade-in duration-300">
             
             {/* Hero Header */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-8 sm:p-10 border border-slate-800 shadow-2xl">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 p-8 sm:p-10 border border-slate-800/80 shadow-2xl bg-grid-pattern">
+              <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-1/3 -mb-12 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
               <div className="max-w-2xl space-y-3 relative z-10">
-                <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 text-xs font-bold rounded-full border border-indigo-500/30 uppercase tracking-wider">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded-full border border-emerald-500/25 uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   Peer-To-Peer Knowledge Sharing
                 </span>
                 
                 <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
                   Swap What You Know. <br />
-                  <span className="bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
                     Learn What You Love.
                   </span>
                 </h1>
