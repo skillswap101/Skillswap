@@ -151,12 +151,11 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="header-user-directory-btn"
                 onClick={onOpenUserDirectory}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="hidden lg:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
                 title="Browse All Members and Read Their Bios"
               >
                 <Users className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="hidden sm:inline">Members & Bios</span>
-                <span className="sm:hidden">Members</span>
+                <span className="hidden xl:inline">Members</span>
               </button>
             )}
 
@@ -164,11 +163,11 @@ export const Header: React.FC<HeaderProps> = ({
             {onOpenAIAssistant && (
               <button
                 onClick={onOpenAIAssistant}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-950/80 hover:bg-purple-900/90 text-purple-200 border border-purple-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-purple-950/80 hover:bg-purple-900/90 text-purple-200 border border-purple-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer shrink-0"
                 title="Open AI Skill Mentor & Assistant"
               >
                 <Bot className="w-3.5 h-3.5 text-purple-400" />
-                <span className="hidden sm:inline">AI Mentor</span>
+                <span className="hidden lg:inline">AI Mentor</span>
               </button>
             )}
 
@@ -223,11 +222,11 @@ export const Header: React.FC<HeaderProps> = ({
               setActiveTab={setActiveTab}
             />
 
-            {/* Invite Friends Button */}
+            {/* Invite Friends Button (Visible on large screens) */}
             {onOpenInviteModal && (
               <button
                 onClick={onOpenInviteModal}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
                 title="Invite Friends & Earn +1 Credit"
               >
                 <Gift className="w-3.5 h-3.5 text-indigo-400" />
@@ -235,26 +234,15 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Direct Codebase ZIP Download for Termux & GitHub */}
-            <a
-              href="/download/skillswap.zip"
-              download="skillswap.zip"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-900/30 transition-all active:scale-95 cursor-pointer no-underline"
-              title="Download SkillSwap Codebase ZIP for Termux / GitHub"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Download ZIP</span>
-              <span className="sm:hidden">ZIP</span>
-            </a>
-
-            {/* Post Skill Button */}
+            {/* Post Skill Button - High Priority CTA */}
             <button
+              id="header-post-skill-btn"
               onClick={onOpenPostSkill}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20 hover:shadow-indigo-600/30 transition-all active:scale-95"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-950/40 hover:shadow-indigo-600/30 transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+              title="Post a New Skill Offer or Request"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">Offer / Request Skill</span>
-              <span className="sm:hidden">Post</span>
+              <PlusCircle className="w-4 h-4 text-white shrink-0" />
+              <span>Post Skill</span>
             </button>
 
             {/* Profile Avatar */}

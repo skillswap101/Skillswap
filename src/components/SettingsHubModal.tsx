@@ -16,7 +16,8 @@ import {
   Clock, 
   Sparkles,
   Link as LinkIcon,
-  LogOut
+  LogOut,
+  Download
 } from 'lucide-react';
 import { User as UserType } from '../types';
 
@@ -220,6 +221,25 @@ export const SettingsHubModal: React.FC<SettingsHubModalProps> = ({
             >
               Read Policies
             </button>
+          </div>
+
+          {/* Backup / Export Codebase ZIP */}
+          <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-xs font-extrabold text-white flex items-center gap-1.5">
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Export Codebase ZIP</span>
+              </p>
+              <p className="text-[10px] text-slate-300">Download complete repository backup for Termux or offline storage</p>
+            </div>
+            <a
+              href="/download/skillswap.zip"
+              download="skillswap.zip"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer shadow flex items-center gap-1.5 no-underline"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download ZIP</span>
+            </a>
           </div>
 
           {/* Log Out */}

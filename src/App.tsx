@@ -608,14 +608,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
-      {/* Global Real-time Notification Listener & Email Alert Triggers */}
-      <GlobalNotificationListener
-        currentUser={currentUser}
-        proposals={proposals}
-        messages={messages}
-        showToast={showToast}
-        setActiveTab={setActiveTab}
-      />
+      {/* Email Alert Toast Triggers */}
       <EmailToastAlert />
 
       {/* Top Navigation */}
