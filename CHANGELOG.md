@@ -10,6 +10,7 @@ All notable changes to the SkillSwap platform are documented in this file.
 - **Render Production Blueprint (`render.yaml`)**: Configured automatic zero-downtime deployment pipeline for Render with health check verification (`/api/health`).
 
 ### Fixed
+- **Reverse Proxy Rate Limit Validation Error (`server.ts`)**: Enabled `app.set('trust proxy', 1)` and configured `validate: { xForwardedForHeader: false }` on `express-rate-limit` instances to eliminate the `X-Forwarded-For` ValidationError behind Cloud Run, Render, and Nginx proxies.
 - **Duplicate Notification Button (`src/App.tsx`, `src/components/Header.tsx`)**: Removed redundant root `<GlobalNotificationListener />` so only a single unified notification bell appears in the header.
 - **Header Layout Overflow & Post Skill Visibility (`src/components/Header.tsx`)**: Resolved horizontal overflow pushing the "Post Skill" button off-screen by optimizing button density and making Post Skill an unclipped, high-priority CTA.
 - **Autonomous AI Directives (`AGENTS.md`)**: Expanded agent capabilities to include vulnerability auditing, PR code reviews, self-healing, and Render deployment protocols.

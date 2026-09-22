@@ -65,6 +65,9 @@ export async function verifyFirebaseToken(
 
 const app = express();
 
+// Trust reverse proxies (Google Cloud Run, Render, Nginx) so client IP and X-Forwarded-For are handled safely
+app.set('trust proxy', 1);
+
 // Helmet's default CSP blocks Vite's inline dev-mode scripts (React Fast
 // Refresh preamble) and its HMR WebSocket - both required in dev, neither
 // needed in production. That's why the page was blank with no visible
@@ -117,6 +120,7 @@ const apiLimiter = rateLimit({
   limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
 });
 
 // Tighter limit for AI + payment endpoints, which cost real money/quota
@@ -126,6 +130,7 @@ const expensiveLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests to this endpoint, please slow down.' },
+  validate: { xForwardedForHeader: false },
 });
 
 // Mount API Routers
