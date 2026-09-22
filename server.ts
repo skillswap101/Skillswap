@@ -139,6 +139,16 @@ app.use(
 );
 
 app.use('/api', apiLimiter);
+
+// Render & Cloud Run health check endpoint
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 app.use(stripeRouter);
 app.use(mpesaCallbackRouter);
 app.use(mpesaPayRouter);

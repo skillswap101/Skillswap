@@ -1,4 +1,4 @@
-name: Autonomous AI Code Quality & Error Checker
+name: Autonomous AI Code Quality, Security & Render Checker
 
 on:
   push:
@@ -7,9 +7,13 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   code-quality-and-ai-audit:
-    name: Lint, Build & AI Audit
+    name: Lint, Build, Security & AI Audit
     runs-on: ubuntu-latest
 
     steps:
@@ -27,13 +31,13 @@ jobs:
       - name: 📦 Install dependencies
         run: npm ci || npm install
 
-      - name: 🔍 Static Type & Syntax Check (tsc)
+      - name: 🔍 TypeScript Verification (tsc --noEmit)
         run: npm run lint
 
-      - name: ⚙️ Production Build Verification
+      - name: ⚙️ Full Production Build (Vite + esbuild)
         run: npm run build
 
-      - name: 🤖 Automated Gemini AI Code Review
+      - name: 🛡️ Autonomous AI Security & Render Deployment Audit
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: node scripts/ai-code-reviewer.js
