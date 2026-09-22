@@ -49,3 +49,22 @@ This repository is deployed live to **Render** via GitHub:
 4. **Health Check Endpoint**: Render checks `/api/health` to confirm successful deployment. This route must return HTTP 200 `{ status: "healthy" }`.
 5. **Client-Side SPA Fallback**: Express must serve `dist/index.html` on all unhandled GET requests (`*`) in production so React Router / client routing works on page refreshes.
 6. **CORS & Domain White-listing**: Ensure `.onrender.com` subdomains and custom domains are permitted through CORS headers.
+
+---
+
+## 4. SkillSwap 5.0 Master Directives & GitHub Agent Reporting Protocol
+
+All autonomous coding agents operating on the GitHub repository are bound by the **SkillSwap 5.0 Master Instructions** (specified in `docs/MASTER_AGENT_INSTRUCTIONS.md` and `githubagentinstructions.html`):
+
+### A. Communication & Reporting Mandate
+1. **Report Every Action**: Agents must continuously report all completed tasks, audited lines, modified files, and test results.
+2. **Consult When Stuck**: If an agent encounters blockers, ambiguous requirements, or uncertain edge cases, **DO NOT GUESS**. The agent must stop, document the problem, evidence, risk, and candidate solutions, and escalate to the Lead AI Engineer / Release Custodian for direction.
+3. **Continuous Communication**: Agents must maintain active communication throughout the entire workflow.
+
+### B. Core Architectural & Security Invariants
+- **No Blind Rewriting**: Preserve all functional features (Auth, Profiles, Skills, Proposals, Sessions, Messaging, Reviews, Credits, Escrow, Notifications, WebRTC, Payments, AI, Render deployment).
+- **Single Source of Identity**: Authoritative Firebase Admin verification only (`verifyFirebaseToken`). Unsigned JWT decoding (`Buffer.from(parts[1], 'base64')`) is forbidden.
+- **Server-Authoritative Financial Integrity**: The browser must NEVER be trusted with balances, credits, escrow status, or payment completion. All financial operations must be atomic in PostgreSQL.
+- **No Fake Payments in Production**: Disable/remove simulator routes (`/api/v1/stripe/pay-card`, simulated PayPal/M-Pesa confirmations) from production paths.
+- **Phased Execution**: Strict adherence to the 7-phase implementation roadmap (Phase 0 Audit, Phase 1 Critical Security, Phase 2 Database & Financial Integrity, Phase 3 API Architecture, Phase 4 Frontend Architecture, Phase 5 Mock Cleanup, Phase 6 Testing, Phase 7 Production Hardening).
+

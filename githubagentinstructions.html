@@ -1,0 +1,1651 @@
+SkillSwap 5.0 — Master GitHub Agent Instructions
+
+You are acting as the senior software architect, security engineer, backend engineer, database engineer, payment-integration engineer, and QA engineer for the SkillSwap 5.0 repository.
+
+Your objective is to take the existing repository from its current state to a production-ready, secure, maintainable architecture without destroying working functionality.
+
+Repository:
+
+- GitHub repository: "skillswap101/Skillswap"
+- Primary branch: "main"
+- Application: SkillSwap 5.0
+- Frontend: React + TypeScript + Vite
+- Backend: Node.js + Express
+- Authentication: Firebase Authentication
+- Database/backend services: Supabase/PostgreSQL
+- Deployment: Render
+- Payments: M-Pesa, Stripe, PayPal
+- AI: OpenRouter/DeepSeek and Google AI where applicable
+- Real-time/WebRTC functionality exists
+- Credits/escrow/session functionality exists
+
+---
+
+1. MOST IMPORTANT RULE
+
+DO NOT blindly rewrite the application.
+
+First:
+
+1. Inspect the entire repository.
+2. Understand the existing architecture.
+3. Identify all production-critical problems.
+4. Identify mock/demo/simulator/development code.
+5. Identify duplicate/legacy/dead code.
+6. Identify security vulnerabilities.
+7. Identify broken or contradictory architecture.
+8. Produce a detailed audit.
+9. Only then implement changes in controlled phases.
+10. Run tests/build/lint after each major phase.
+11. Do not claim something is fixed unless you actually verify it.
+
+Never hide a problem simply because fixing it is difficult.
+
+---
+
+2. DO NOT BREAK THESE CORE FEATURES
+
+Preserve and test:
+
+- Firebase authentication
+- Email/password authentication
+- Google authentication
+- User profiles
+- Skills
+- Skill discovery
+- Proposals
+- Sessions
+- Messaging
+- Reviews
+- Credits
+- Escrow
+- Notifications
+- WebRTC
+- M-Pesa
+- Stripe
+- PayPal
+- AI functionality
+- Render deployment
+- Firebase identity
+- Supabase database functionality
+
+If a feature is architecturally unsafe, do not simply delete it.
+
+Instead:
+
+1. identify the problem;
+2. document it;
+3. redesign it;
+4. implement the safer version;
+5. test it.
+
+---
+
+3. TARGET ARCHITECTURE
+
+The target architecture should be:
+
+                    ┌─────────────────────┐
+                    │   React / Vite UI   │
+                    └──────────┬──────────┘
+                               │
+                        Firebase ID Token
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   Express API       │
+                    │                     │
+                    │ Authentication      │
+                    │ Authorization       │
+                    │ Validation          │
+                    │ Business Logic      │
+                    │ Rate Limiting       │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Supabase/Postgres   │
+                    │                     │
+                    │ System of Record    │
+                    │ RLS                 │
+                    │ Transactions        │
+                    └─────────────────────┘
+
+          ┌────────────┬──────────────┬─────────────┐
+          ▼            ▼              ▼             ▼
+       Stripe       M-Pesa         PayPal          AI
+
+The browser must NOT be trusted with:
+
+- credit balances
+- escrow balances
+- payment completion
+- transaction creation
+- payment status
+- financial ownership
+- arbitrary database writes
+- authorization decisions
+
+Firebase should primarily provide identity.
+
+The SkillSwap API should provide authorization and business logic.
+
+Supabase/PostgreSQL should be the system of record.
+
+---
+
+4. AUTHENTICATION AUDIT
+
+Inspect every authentication implementation.
+
+There must be ONE authoritative Firebase authentication mechanism.
+
+Find and remove/rework:
+
+- duplicate authentication systems
+- insecure JWT decoding
+- unsigned JWT acceptance
+- client-controlled user IDs
+- demo authentication
+- fallback users
+- "demo-user-1"
+- "CURRENT_USER"
+- anonymous authentication fallbacks
+- authentication bypasses
+- development authentication that can reach production
+
+VERY IMPORTANT:
+
+If code decodes a JWT using something equivalent to:
+
+Buffer.from(parts[1], 'base64')
+
+and then trusts the decoded payload without cryptographic signature verification, classify it as a critical vulnerability.
+
+Do not accept unsigned or locally decoded JWTs as authenticated users.
+
+Authentication should ultimately use Firebase Admin verification.
+
+---
+
+5. AUTHORIZATION AUDIT
+
+Authentication is NOT authorization.
+
+For every API endpoint determine:
+
+Who is calling?
+Who owns the resource?
+Who is allowed to modify it?
+What fields are they allowed to modify?
+What relationships must exist?
+
+Inspect every route for IDOR/BOLA vulnerabilities.
+
+Test cases must include:
+
+- User A accessing User B's profile
+- User A modifying User B's profile
+- User A modifying User B's skill
+- User A modifying User B's proposal
+- User A modifying User B's session
+- User A reading User B's messages
+- User A modifying User B's review
+- User A accessing User B's payment
+- User A accessing User B's transaction
+- User A accessing User B's escrow
+- User A accessing another user's payment status
+
+Every sensitive operation must derive identity from the verified Firebase token, NOT from a client-provided "userId".
+
+---
+
+6. REMOVE GENERIC CLOUD WRITE ROUTES
+
+Pay special attention to routes similar to:
+
+/api/cloud/:collection/:id
+
+A generic endpoint that accepts arbitrary collection names and arbitrary request bodies is dangerous.
+
+Do not allow:
+
+client → collection → arbitrary fields → database
+
+Replace with explicit operations such as:
+
+POST /api/skills
+PATCH /api/skills/:id
+DELETE /api/skills/:id
+
+POST /api/proposals
+POST /api/proposals/:id/accept
+POST /api/proposals/:id/reject
+
+POST /api/messages
+
+POST /api/reviews
+
+Each endpoint must have:
+
+- authentication
+- authorization
+- validation
+- field allowlists
+- ownership checks
+- business-rule checks
+
+---
+
+7. FINANCIAL SECURITY
+
+Treat the following as HIGH-RISK:
+
+- credits
+- escrow
+- balances
+- payments
+- transactions
+- refunds
+- payment completion
+
+Never trust client values for:
+
+balance
+credits
+escrow
+price
+amount
+payment status
+payment completion
+recipient
+sender
+transaction status
+
+Prices must come from a server-side package/catalog.
+
+Amounts must be validated server-side.
+
+---
+
+8. CREDIT SYSTEM
+
+The credit system must be server authoritative.
+
+Do not allow:
+
+browser → update balance
+
+The correct pattern is:
+
+payment
+   ↓
+verified payment
+   ↓
+atomic credit transaction
+   ↓
+credit ledger
+   ↓
+updated balance
+
+Create/use a proper ledger where appropriate.
+
+Every credit movement should have:
+
+- transaction ID
+- user ID
+- amount
+- direction
+- reason
+- source
+- reference
+- timestamp
+- idempotency information
+
+---
+
+9. ATOMIC PAYMENTS
+
+Inspect:
+
+paymentsService
+creditsService
+Stripe
+M-Pesa
+PayPal
+escrow
+session completion
+session cancellation
+proposal acceptance
+
+Look specifically for:
+
+read balance
+→ calculate new balance
+→ write balance
+
+without a database transaction or locking.
+
+These operations can race.
+
+Replace dangerous multi-step financial operations with atomic PostgreSQL transactions/RPCs where appropriate.
+
+A payment fulfillment operation should conceptually be:
+
+BEGIN
+
+lock payment
+
+IF payment already completed:
+    return already_processed
+
+verify payment
+
+credit user
+
+insert ledger transaction
+
+mark payment completed
+
+COMMIT
+
+Do not allow the same payment to create credits twice.
+
+---
+
+10. STRIPE
+
+Inspect all Stripe code.
+
+The following is NOT acceptable in production:
+
+fake card
+fake receipt
+fake charge
+fake PaymentIntent
+sandbox fallback that credits real accounts
+
+Any endpoint similar to:
+
+/api/v1/stripe/pay-card
+
+must be removed, disabled, or replaced with a legitimate Stripe flow.
+
+Never accept raw card numbers or sensitive card details through SkillSwap.
+
+Use Stripe Checkout or PaymentIntents appropriately.
+
+Webhook handling must:
+
+1. verify Stripe signature;
+2. use the raw request body;
+3. identify the payment;
+4. verify the amount/currency/package;
+5. be idempotent;
+6. fulfill credits atomically;
+7. record the event;
+8. safely handle retries.
+
+---
+
+11. M-PESA
+
+Inspect:
+
+- STK Push
+- callbacks
+- payment status
+- simulator endpoints
+- sandbox code
+- auto-fulfillment
+
+Production must NEVER allow an authenticated user to call an endpoint that simply says:
+
+payment confirmed
+
+and receives credits.
+
+Disable/remove production simulator endpoints.
+
+M-Pesa fulfillment must depend on verified gateway information.
+
+Payment status must also verify ownership.
+
+For example:
+
+User A must not be able to query User B's CheckoutRequestID
+and obtain payment information.
+
+---
+
+12. PAYPAL
+
+Inspect:
+
+- order creation
+- order capture
+- sandbox mode
+- simulated orders
+- "PP_SIM_*"
+- automatic fulfillment
+
+Production must never credit a real account from a fake PayPal order.
+
+Verify:
+
+- order ID
+- authenticated user
+- package
+- amount
+- currency
+- PayPal capture status
+
+Make fulfillment idempotent.
+
+---
+
+13. SUPABASE SECURITY
+
+Audit:
+
+SUPABASE_SCHEMA.sql
+
+and every migration/policy.
+
+Look for:
+
+USING (true)
+WITH CHECK (true)
+
+and equivalent overly permissive policies.
+
+Do not blindly delete all policies.
+
+First determine whether the application uses:
+
+browser → Supabase
+
+or:
+
+browser → SkillSwap API → Supabase
+
+The preferred production architecture is:
+
+browser
+   ↓
+SkillSwap API
+   ↓
+Supabase service role
+
+The service role must NEVER be exposed to the browser.
+
+If direct browser access remains, implement proper authenticated JWT/RLS authorization instead.
+
+---
+
+14. SUPABASE CLIENT
+
+Inspect:
+
+src/lib/supabase.ts
+server/supabaseClient.ts
+
+Remove insecure fallback behavior.
+
+Especially inspect code where:
+
+service role key
+→ anon key
+→ VITE key
+→ hardcoded key
+
+is used as a fallback chain.
+
+Production server code must fail closed if the required privileged credential is unavailable.
+
+Never put:
+
+SUPABASE_SERVICE_ROLE_KEY
+
+into frontend code.
+
+Never expose it through Vite.
+
+---
+
+15. FIREBASE
+
+Firebase should be used for identity.
+
+Inspect:
+
+firebase.ts
+firebaseAdmin.ts
+AuthContext
+middleware/auth.js
+
+Ensure:
+
+- Firebase Admin verification is authoritative.
+- Render production credentials are correctly configured.
+- No insecure fallback authentication exists.
+- Client configuration is not confused with Admin credentials.
+- User UID is consistently taken from the verified Firebase token.
+
+---
+
+16. FIRESTORE RULES
+
+Treat the current Firestore rules as an authorization blueprint where useful.
+
+Pay particular attention to protections around:
+
+- user ownership
+- financial fields
+- proposals
+- sessions
+- escrow
+- payments
+- transactions
+- messages
+
+Do not weaken existing strong authorization merely to make a feature easier.
+
+---
+
+17. MOCK / DEMO / FAKE DATA AUDIT
+
+Perform a repository-wide search for ALL of:
+
+mock
+mockData
+MOCK_DATA
+dummy
+demo
+demo-user
+sample
+fixture
+fake
+simulator
+sandbox
+placeholder
+test@example
+example.com
+CURRENT_USER
+initialData
+fallback
+seed
+fakeReceipt
+SIM_
+PP_SIM_
+WS_CO_SIM_
+setTimeout
+
+Also inspect:
+
+localStorage
+sessionStorage
+hardcoded arrays
+hardcoded users
+hardcoded balances
+hardcoded skills
+hardcoded messages
+hardcoded reviews
+hardcoded transactions
+
+Classify every finding:
+
+CATEGORY A — Safe test code
+
+Example:
+
+tests/
+fixtures/
+unit test mocks
+
+Keep it.
+
+CATEGORY B — Development-only
+
+Keep only if clearly isolated and impossible to activate in production.
+
+CATEGORY C — Dangerous fallback
+
+Example:
+
+if API fails → use demo data
+
+Remove from production.
+
+CATEGORY D — Fake financial functionality
+
+Examples:
+
+simulated payment
+fake receipt
+fake card payment
+automatic sandbox credit
+
+Remove or strictly isolate from production.
+
+CATEGORY E — UI placeholder
+
+Example:
+
+hardcoded profile statistics
+
+Replace with real data if the UI is supposed to represent production data.
+
+Produce a table:
+
+File | Line | Pattern | Purpose | Production reachable? | Risk | Action
+
+---
+
+18. FRONTEND STATE AUDIT
+
+Inspect:
+
+src/hooks/useCloudStateBridge.ts
+
+and all callers.
+
+Find:
+
+- direct Supabase writes
+- duplicate state systems
+- local fallback state
+- demo users
+- hardcoded IDs
+- client-controlled financial state
+- duplicated business logic
+- stale/unused cloud functions
+
+The frontend should not independently implement financial business rules.
+
+Move authoritative operations to the API.
+
+---
+
+19. SERVER ARCHITECTURE
+
+If "server.ts" is too large, progressively refactor it.
+
+Target:
+
+server/
+├── app.ts
+├── config/
+├── middleware/
+├── routes/
+├── controllers/
+├── services/
+├── repositories/
+├── validators/
+├── providers/
+└── jobs/
+
+Do not perform a massive rewrite in one step.
+
+Move functionality incrementally.
+
+Keep behavior tested after each extraction.
+
+---
+
+20. VALIDATION
+
+Introduce a consistent request-validation strategy.
+
+Prefer Zod or an equivalent schema validator.
+
+Validate:
+
+- IDs
+- strings
+- numbers
+- enums
+- prices
+- currencies
+- phone numbers
+- ratings
+- review text
+- pagination
+- query parameters
+- request bodies
+
+Example:
+
+rating: integer 1–5
+feedback: bounded length
+amount: positive decimal
+currency: allowed enum
+packageId: server-known package
+
+Reject unknown fields for security-sensitive requests.
+
+---
+
+21. RATE LIMITING
+
+Audit rate limits for:
+
+- authentication
+- password-related routes
+- AI
+- payments
+- payment status
+- messaging
+- notifications
+- WebRTC room creation
+- expensive endpoints
+
+Do not rely only on frontend throttling.
+
+---
+
+22. CORS
+
+Do NOT use broad production rules such as:
+
+origin.endsWith(".run.app")
+
+or:
+
+origin.includes("ai.studio")
+
+unless there is a documented security reason.
+
+Production should use an explicit allowlist:
+
+ALLOWED_ORIGINS=https://your-real-production-domain
+
+Development origins may be allowed separately.
+
+Reject unknown origins.
+
+---
+
+23. SECURITY HEADERS
+
+Audit:
+
+- Helmet
+- CSP
+- CORS
+- HSTS
+- X-Content-Type-Options
+- Referrer Policy
+- frame protection
+- permissions policy
+
+Do not weaken security headers merely to make development easier.
+
+---
+
+24. SECRETS
+
+Search the repository and Git history for:
+
+API keys
+service account keys
+private keys
+JWT secrets
+Supabase service role keys
+Stripe secrets
+PayPal secrets
+M-Pesa credentials
+OpenRouter keys
+Google AI credentials
+Firebase Admin credentials
+FCM server credentials
+
+Do NOT print discovered secrets in the audit.
+
+If a credential appears committed to Git history:
+
+1. classify it as potentially compromised;
+2. recommend rotation/revocation;
+3. remove it from the repository;
+4. replace it with a placeholder;
+5. update ".gitignore";
+6. search history again.
+
+Do not assume ".gitignore" protects secrets that were already committed.
+
+---
+
+25. PUBLIC DOWNLOAD ROUTES
+
+Inspect routes serving:
+
+skillswap.zip
+push_to_github.sh
+fix_auth_and_sync.py
+supabase_transition.py
+SUPABASE_SCHEMA.sql
+
+Determine whether they are actually required.
+
+Do not expose internal migration/security scripts publicly in production.
+
+Remove them or require authenticated/admin access.
+
+---
+
+26. ERROR HANDLING
+
+Audit every API route.
+
+Do not leak:
+
+- stack traces
+- database credentials
+- SQL
+- internal filesystem paths
+- Firebase credentials
+- provider secrets
+
+Production responses should contain safe error messages.
+
+Server logs may contain detailed diagnostics but must not expose secrets.
+
+---
+
+27. LOGGING AND AUDITING
+
+Introduce structured logs where appropriate.
+
+Security-sensitive operations should have:
+
+request ID
+user ID
+operation
+resource ID
+result
+timestamp
+
+For financial operations, maintain an audit trail.
+
+Consider an:
+
+audit_logs
+
+table.
+
+Never log:
+
+- passwords
+- access tokens
+- service-role keys
+- card numbers
+- private keys
+- payment secrets
+
+---
+
+28. ESCROW STATE MACHINE
+
+Formalize escrow/session states.
+
+For example:
+
+PROPOSED
+   ↓
+ACCEPTED
+   ↓
+FUNDS_LOCKED
+   ↓
+IN_PROGRESS
+   ↓
+COMPLETED
+
+Cancellation/refund paths must be explicit.
+
+Do not allow clients to arbitrarily set:
+
+status = completed
+
+or:
+
+escrowLockedCredits = 0
+
+without server-side business validation.
+
+---
+
+29. SESSION COMPLETION
+
+Inspect completion carefully.
+
+Prevent:
+
+- duplicate completion
+- double payment
+- double rating
+- unauthorized completion
+- unauthorized cancellation
+
+Use database transactions and idempotency.
+
+---
+
+30. REVIEWS
+
+Reviews must verify:
+
+- authenticated author
+- legitimate completed session
+- author participated in session
+- correct target
+- one review per permitted relationship/session where appropriate
+- rating range 1–5
+- bounded text length
+
+Never allow arbitrary users to review arbitrary users through a generic write route.
+
+---
+
+31. MESSAGING
+
+Verify:
+
+sender == authenticated Firebase UID
+
+and:
+
+sender/recipient are authorized participants
+
+Do not allow users to send messages pretending to be another user.
+
+---
+
+32. WEBRTC
+
+Verify:
+
+- authenticated user
+- participant membership
+- room ownership/relationship
+- no arbitrary participant injection
+- no unauthorized room access
+
+Never trust participant IDs supplied by the client without checking them against the authorized session/proposal.
+
+---
+
+33. AI ENDPOINTS
+
+Audit all AI endpoints.
+
+Ensure:
+
+- authentication
+- rate limiting
+- request size limits
+- prompt/input validation
+- no secret leakage
+- cost protection
+- timeout handling
+- safe provider error handling
+
+AI should never be able to directly modify financial records.
+
+---
+
+34. DATABASE CONCURRENCY
+
+Search specifically for:
+
+read → calculate → write
+
+patterns.
+
+Test concurrent:
+
+- payment fulfillment
+- proposal acceptance
+- session completion
+- session cancellation
+- credit transfer
+- escrow release
+
+Use PostgreSQL transactions/locking/RPCs where needed.
+
+---
+
+35. TEST SUITE
+
+Create tests for:
+
+Authentication
+
+valid token
+invalid token
+expired token
+wrong issuer
+wrong audience
+missing token
+
+Authorization
+
+User A → User B resource
+User B → User A resource
+unauthorized role
+unauthorized participant
+
+Payments
+
+same payment twice
+wrong amount
+wrong package
+wrong user
+fake payment
+expired payment
+duplicate webhook
+provider retry
+
+Credits
+
+double spend
+negative balance
+concurrent transfer
+duplicate completion
+
+Escrow
+
+unauthorized release
+double release
+invalid cancellation
+concurrent completion
+
+API
+
+invalid body
+unknown fields
+oversized body
+invalid IDs
+invalid pagination
+
+---
+
+36. BUILD VERIFICATION
+
+After changes run:
+
+npm install
+npm run lint
+npm run build
+
+Also run any existing:
+
+npm test
+
+or equivalent test commands.
+
+If a test suite does not exist, create a meaningful one.
+
+Do not suppress TypeScript errors merely to make the build pass.
+
+---
+
+37. PRODUCTION CONFIGURATION
+
+Audit:
+
+.env
+.env.example
+Render configuration
+Vite configuration
+Firebase configuration
+Supabase configuration
+package.json
+
+Ensure frontend secrets are never bundled.
+
+Clearly separate:
+
+VITE_PUBLIC_*
+
+from:
+
+SERVER_SECRET_*
+
+The frontend must only receive values that are genuinely safe to expose.
+
+---
+
+38. DEPENDENCY AUDIT
+
+Inspect:
+
+package.json
+package-lock.json
+bun.lock
+
+Identify:
+
+- obsolete packages
+- duplicate dependencies
+- unused packages
+- package manager drift
+- known vulnerabilities
+
+Do not upgrade major versions blindly.
+
+For each dependency change explain:
+
+current version
+target version
+reason
+compatibility risk
+
+---
+
+39. DEAD CODE AUDIT
+
+Search for:
+
+- unused functions
+- duplicate authentication functions
+- duplicate Supabase clients
+- duplicate payment implementations
+- legacy Firebase code
+- old cloud bridge functions
+- unreachable API routes
+- unused environment variables
+- old migration scripts
+- old demo components
+- obsolete comments describing architecture that no longer exists
+
+Classify before deleting.
+
+Do not delete code merely because it looks unused without checking imports/references.
+
+---
+
+40. API INVENTORY
+
+Produce a complete API table:
+
+Method | Route | Authentication | Authorization | Validation | Database | Payment | Risk | Status
+
+Include EVERY route.
+
+No endpoint should be omitted.
+
+---
+
+41. DATABASE INVENTORY
+
+Produce:
+
+Table | Purpose | Owner | Client Access | Server Access | RLS | Sensitive Fields | Risk
+
+Include every table.
+
+---
+
+42. FRONTEND INVENTORY
+
+Produce:
+
+Component/Page/Hook
+Purpose
+Data Source
+API/DB Calls
+Authentication Required
+Mock Data?
+Production Safe?
+Action
+
+Include the major application surfaces.
+
+---
+
+43. ENVIRONMENT VARIABLE INVENTORY
+
+Produce:
+
+Variable
+Used By
+Frontend/Backend
+Secret?
+Required in Production?
+Fallback?
+Risk
+
+Never print actual secret values.
+
+---
+
+44. MOCK DATA INVENTORY
+
+Produce a dedicated report:
+
+Mock/Demo Item
+File
+Purpose
+Production Reachable?
+Financial Impact?
+Security Impact?
+Keep?
+Replace With
+
+This report is mandatory.
+
+---
+
+45. PHASED IMPLEMENTATION
+
+Do NOT make one enormous uncontrolled commit.
+
+Use phases.
+
+PHASE 0 — AUDIT ONLY
+
+Do not modify application logic.
+
+Produce:
+
+AUDIT_REPORT.md
+
+including:
+
+- architecture
+- security
+- authentication
+- authorization
+- payments
+- database
+- mock data
+- dead code
+- frontend
+- backend
+- deployment
+- dependencies
+- tests
+- prioritized remediation plan
+
+---
+
+PHASE 1 — CRITICAL SECURITY
+
+Fix:
+
+- authentication bypass
+- unsigned JWT fallback
+- IDOR/BOLA
+- exposed secrets
+- dangerous public routes
+- production payment simulators
+- fake financial operations
+- generic unrestricted cloud writes
+- unsafe CORS
+- privileged credential fallbacks
+
+Run build/tests.
+
+---
+
+PHASE 2 — DATABASE + FINANCIAL INTEGRITY
+
+Fix:
+
+- RLS
+- transactions
+- credit ledger
+- escrow
+- payment idempotency
+- concurrency
+- ownership
+- payment status
+
+Run tests.
+
+---
+
+PHASE 3 — API ARCHITECTURE
+
+Refactor:
+
+routes
+controllers
+services
+repositories
+validators
+providers
+
+Do not change behavior unnecessarily.
+
+---
+
+PHASE 4 — FRONTEND ARCHITECTURE
+
+Refactor:
+
+useCloudStateBridge
+
+and remove:
+
+- direct unsafe financial writes
+- demo fallbacks
+- duplicate business logic
+- client-controlled financial state
+
+Use API calls.
+
+---
+
+PHASE 5 — MOCK/DEMO CLEANUP
+
+Remove production-reachable:
+
+- mock data
+- demo users
+- simulated payments
+- fake receipts
+- fake balances
+- fake transactions
+- sandbox auto-crediting
+
+Preserve properly isolated test fixtures.
+
+---
+
+PHASE 6 — TESTING
+
+Add:
+
+- unit tests
+- integration tests
+- security tests
+- payment tests
+- concurrency tests
+- E2E tests where practical
+
+---
+
+PHASE 7 — PRODUCTION HARDENING
+
+Verify:
+
+- Render
+- Firebase
+- Supabase
+- Stripe
+- M-Pesa
+- PayPal
+- environment variables
+- CORS
+- CSP
+- health endpoint
+- logs
+- monitoring
+- backups
+- migrations
+- rollback strategy
+
+---
+
+46. GIT DISCIPLINE
+
+Before modifying important files:
+
+Create a clean checkpoint.
+
+Use small, understandable commits.
+
+Recommended commit style:
+
+security: remove unsigned JWT fallback
+security: restrict cloud writes
+payments: make fulfillment idempotent
+database: harden RLS policies
+payments: disable production simulators
+architecture: extract payment service
+frontend: remove demo user fallback
+tests: add authorization coverage
+
+Never mix unrelated changes into one commit.
+
+---
+
+47. DO NOT DO THESE THINGS
+
+NEVER:
+
+- invent environment variables without documenting them
+- expose secrets
+- commit credentials
+- silently disable authentication
+- bypass Firebase
+- trust client balances
+- trust client payment confirmation
+- trust client ownership IDs
+- disable RLS just to make code work
+- make all Supabase policies public
+- remove security checks to fix a failing test
+- replace real data with mock data
+- introduce demo data into production
+- silently swallow database errors
+- ignore failed payment fulfillment
+- accept unsigned JWTs
+- accept arbitrary database collections
+- perform fake payments in production
+- claim tests passed if they were not run
+
+---
+
+48. WHEN A FIX IS UNCERTAIN
+
+If you discover a problem but cannot safely fix it automatically:
+
+DO NOT GUESS.
+
+Document:
+
+Problem
+Evidence
+Risk
+Why automatic modification is unsafe
+Recommended fix
+Files affected
+Testing required
+
+Then continue with safe changes.
+
+---
+
+49. FINAL DELIVERABLES
+
+At the end produce:
+
+docs/
+├── ARCHITECTURE_AUDIT.md
+├── SECURITY_AUDIT.md
+├── MOCK_DATA_AUDIT.md
+├── API_AUDIT.md
+├── DATABASE_AUDIT.md
+├── PAYMENT_AUDIT.md
+├── FRONTEND_AUDIT.md
+├── PRODUCTION_READINESS.md
+└── REMEDIATION_PLAN.md
+
+Also produce:
+
+docs/CHANGELOG_SECURITY.md
+
+containing every important security change.
+
+Create migrations under:
+
+database/migrations/
+
+where appropriate.
+
+Create tests under:
+
+tests/
+
+where appropriate.
+
+---
+
+50. FINAL REPORT FORMAT
+
+At completion provide:
+
+Executive Summary
+
+Architecture Before
+
+Architecture After
+
+Critical Vulnerabilities Found
+
+Critical Vulnerabilities Fixed
+
+Remaining Risks
+
+Authentication
+
+Authorization
+
+Supabase/RLS
+
+Payments
+
+Credits
+
+Escrow
+
+Mock/Demo Data
+
+Dead Code
+
+API
+
+Frontend
+
+Database
+
+Secrets
+
+Deployment
+
+Tests
+
+Build Results
+
+Files Changed
+
+Database Migrations
+
+Environment Variables Required
+
+Manual Actions Required
+
+Rollback Instructions
+
+Production Go-Live Checklist
+
+For every unresolved item give:
+
+Severity
+File
+Problem
+Evidence
+Impact
+Recommended solution
+Status
+
+---
+
+51. SUCCESS CRITERIA
+
+The project is NOT considered production-ready merely because:
+
+npm run build
+
+passes.
+
+Production readiness requires:
+
+- authenticated API
+- correct authorization
+- secure database access
+- no production demo user
+- no production fake payments
+- server-authoritative credits
+- atomic financial operations
+- idempotent payment fulfillment
+- secure escrow
+- protected messages
+- protected reviews
+- protected WebRTC
+- strict validation
+- controlled CORS
+- secrets protected
+- meaningful tests
+- successful production build
+- deployment configuration verified
+
+The final goal is:
+
+REAL USER
+   ↓
+Firebase Authentication
+   ↓
+Verified Firebase ID Token
+   ↓
+SkillSwap API
+   ↓
+Authorization + Validation
+   ↓
+Business Logic
+   ↓
+Atomic PostgreSQL Operations
+   ↓
+Real Payment Provider
+
+There must be no hidden:
+
+demo user
+fake balance
+fake payment
+fake receipt
+unsigned authentication
+client-controlled financial state
+arbitrary database write
+
+in the production path.
+
+---
+
+52. IMPORTANT FINAL INSTRUCTION
+
+Before making broad architectural changes, inspect the CURRENT repository.
+
+Do not rely on assumptions from previous versions of SkillSwap.
+
+The repository itself is the source of truth.
+
+If documentation conflicts with code:
+
+code + verified behavior
+
+takes precedence over old documentation.
+
+If two implementations exist:
+
+1. determine which one is actually used;
+2. determine whether the other is legacy;
+3. document the difference;
+4. remove only after verifying references.
+
+The objective is not simply to make the code compile.
+
+The objective is to make SkillSwap:
+
+secure, real-data-driven, financially safe, maintainable, testable, and production-ready.
