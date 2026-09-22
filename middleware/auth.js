@@ -33,6 +33,7 @@ if (!getApps().length) {
       initializeApp({ projectId });
     }
   } else {
+    // Fallback initialization using Project ID only
     initializeApp({ projectId });
   }
 }
@@ -51,6 +52,7 @@ export const authenticateUser = async (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized: Empty token' });
   }
 
+  // 1. Try standard Firebase ID token verification (without checkRevoked to avoid requiring private service account)
   try {
     const decodedToken = await auth.verifyIdToken(idToken, false);
     
@@ -70,3 +72,4 @@ export const authenticateUser = async (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired Firebase token' });
   }
 };
+

@@ -98,6 +98,7 @@ import { LearningAnalytics } from './components/LearningAnalytics';
 import { PeerRatingsChart } from './components/PeerRatingsChart';
 import { PortfolioShowcaseModal } from './components/PortfolioShowcaseModal';
 import { SwapContractsView } from './components/SwapContractsView';
+import { UserDirectoryModal } from './components/UserDirectoryModal';
 
 import { 
   Skill, 
@@ -208,6 +209,7 @@ export default function App() {
   const [isPostSkillOpen, setIsPostSkillOpen] = useState<boolean>(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState<boolean>(false);
+  const [isUserDirectoryOpen, setIsUserDirectoryOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isTermsPrivacyOpen, setIsTermsPrivacyOpen] = useState<boolean>(false);
   const [isStripeCheckoutOpen, setIsStripeCheckoutOpen] = useState<boolean>(false);
@@ -632,6 +634,7 @@ export default function App() {
         onOpenPostSkill={() => setIsPostSkillOpen(true)}
         onOpenInviteModal={() => setIsInviteModalOpen(true)}
         onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
+        onOpenUserDirectory={() => setIsUserDirectoryOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenStripeCheckout={() => setIsUnifiedCheckoutOpen(true)}
         onOpenCheckout={() => setIsUnifiedCheckoutOpen(true)}
@@ -1367,6 +1370,58 @@ export default function App() {
           }}
         />
       )}
+
+      <UserDirectoryModal
+        isOpen={isUserDirectoryOpen}
+        onClose={() => setIsUserDirectoryOpen(false)}
+        skills={skills}
+        onSelectUserForSkillFilter={(userName) => {
+          setActiveTab('explore');
+          setSearchQuery(userName);
+          handleSearchSubmit(userName);
+          window.scrollTo({ top: 320, behavior: 'smooth' });
+        }}
+        onOpenProposeModal={(skill) => {
+          setProposalTargetSkill(skill);
+        }}
+        onStartChatWithUser={(targetUser) => {
+          // Check if conversation/proposal thread already exists
+          const existing = proposals.find(
+            (p) => p.senderId === targetUser.id || p.recipientId === targetUser.id
+          );
+
+          if (existing) {
+            setSelectedProposalChatId(existing.id);
+          } else {
+            const newPropId = `prop_dm_${Date.now()}`;
+            const newProposal: SwapProposal = {
+              id: newPropId,
+              senderId: currentUser.id,
+              senderName: currentUser.name,
+              senderAvatar: currentUser.avatar,
+              recipientId: targetUser.id,
+              recipientName: targetUser.name,
+              recipientAvatar: targetUser.avatar,
+              offeredSkillTitle: currentUser.skillsOffered?.[0] || 'Skill Exchange Consultation',
+              requestedSkillTitle: targetUser.skillsOffered?.[0] || 'Peer Mentorship Session',
+              status: 'accepted',
+              durationMinutes: 60,
+              proposedDate: 'Direct Message',
+              proposedTime: 'Flexible',
+              pitchMessage: `Hi ${targetUser.name}! I saw your bio in the community directory and would love to connect.`,
+              useTimeCredits: false,
+              timeCreditsAmount: 0,
+              createdAt: 'Just now',
+            };
+            setProposals((prev) => [newProposal, ...prev]);
+            setSelectedProposalChatId(newPropId);
+          }
+
+          setActiveTab('chat');
+          showToast(`💬 Opened chat with ${targetUser.name}`);
+        }}
+        showToast={showToast}
+      />
 
     </div>
   );

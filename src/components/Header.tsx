@@ -22,7 +22,8 @@ import {
   CreditCard,
   MapPin,
   Mic,
-  Download
+  Download,
+  Users
 } from 'lucide-react';
 import { User, SwapProposal, ChatMessage } from '../types';
 import { networkNotifier } from '../utils/networkNotifier';
@@ -43,6 +44,7 @@ interface HeaderProps {
   onOpenPostSkill: () => void;
   onOpenInviteModal?: () => void;
   onOpenAIAssistant?: () => void;
+  onOpenUserDirectory?: () => void;
   onOpenSettings?: () => void;
   onOpenStripeCheckout?: () => void;
   onOpenCheckout?: () => void;
@@ -64,6 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPostSkill,
   onOpenInviteModal,
   onOpenAIAssistant,
+  onOpenUserDirectory,
   onOpenSettings,
   onOpenStripeCheckout,
   onOpenCheckout,
@@ -142,6 +145,20 @@ export const Header: React.FC<HeaderProps> = ({
                 </>
               )}
             </div>
+
+            {/* Community Members Directory Trigger Button */}
+            {onOpenUserDirectory && (
+              <button
+                id="header-user-directory-btn"
+                onClick={onOpenUserDirectory}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-200 border border-indigo-500/40 rounded-xl text-xs font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer"
+                title="Browse All Members and Read Their Bios"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Members & Bios</span>
+                <span className="sm:hidden">Members</span>
+              </button>
+            )}
 
             {/* AI Assistant Drawer Trigger Button */}
             {onOpenAIAssistant && (
@@ -287,6 +304,17 @@ export const Header: React.FC<HeaderProps> = ({
               <Compass className="w-4 h-4" />
               <span>Explore Marketplace</span>
             </button>
+
+            {onOpenUserDirectory && (
+              <button
+                onClick={onOpenUserDirectory}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors whitespace-nowrap text-indigo-300 hover:text-white hover:bg-slate-800/60 font-semibold"
+                title="View list of all community members and bios"
+              >
+                <Users className="w-4 h-4 text-indigo-400" />
+                <span>All Members & Bios</span>
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTab('requested')}

@@ -23,5 +23,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "skillswap5.0"]
+  "exclude": ["node_modules", "dist"]
 }

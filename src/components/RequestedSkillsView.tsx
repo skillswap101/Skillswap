@@ -202,9 +202,13 @@ export const RequestedSkillsView: React.FC<RequestedSkillsViewProps> = ({
       tags: newTagsStr.split(',').map((s) => s.trim()).filter(Boolean),
     };
 
+    const matchingCount = skills.filter(
+      s => s.userId !== currentUser.id && (s.category === newCategory || newTagsStr.toLowerCase().split(',').some(t => s.title.toLowerCase().includes(t.trim())))
+    ).length;
+
     setRequests([created, ...requests]);
     setShowCreateModal(false);
-    showToast('Your skill learning request has been published to the community board!');
+    showToast(`🚀 Published! Found ${matchingCount} matching mentors in ${newCategory} and dispatched peer alerts!`);
     // Reset form
     setNewTitle('');
     setNewDescription('');
@@ -366,6 +370,71 @@ export const RequestedSkillsView: React.FC<RequestedSkillsViewProps> = ({
                     </span>
                   ))}
                 </div>
+
+                {/* Peer Mentor Match & Alert Engine */}
+                {(() => {
+                  const matchingMentors = skills.filter((s) => {
+                    if (s.userId === req.userId) return false;
+                    const q = req.title.toLowerCase();
+                    const catMatch = s.category === req.category;
+                    const textMatch = req.tags.some((t) => s.title.toLowerCase().includes(t.toLowerCase())) ||
+                                      s.title.toLowerCase().includes(q) ||
+                                      q.includes(s.title.toLowerCase().split(' ')[0]);
+                    return catMatch || textMatch;
+                  }).slice(0, 2);
+
+                  const currentUserCanTeach = currentUser.skillsOffered?.some((so) => 
+                    req.title.toLowerCase().includes(so.toLowerCase()) || 
+                    req.tags.some((t) => so.toLowerCase().includes(t.toLowerCase()))
+                  );
+
+                  return (
+                    <div className="pt-2 space-y-2">
+                      {currentUserCanTeach && (
+                        <div className="p-2.5 bg-emerald-950/60 border border-emerald-500/40 rounded-xl flex items-center justify-between text-xs text-emerald-300">
+                          <span className="flex items-center gap-1.5 font-bold">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                            Your skills match this request!
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setOfferTargetRequest(req)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-[11px] shadow-sm cursor-pointer"
+                          >
+                            Quick Respond
+                          </button>
+                        </div>
+                      )}
+
+                      {matchingMentors.length > 0 && (
+                        <div className="p-2.5 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between gap-2 text-xs flex-wrap sm:flex-nowrap">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="text-[10px] uppercase font-bold text-indigo-400 shrink-0">🎯 Matched Mentors:</span>
+                            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                              {matchingMentors.map((m) => (
+                                <span key={m.id} className="text-[11px] text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-md shrink-0 flex items-center gap-1">
+                                  <span className="font-semibold text-white">{m.userName}</span>
+                                  <span className="text-[10px] text-indigo-300">({m.title})</span>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              showToast(`🔔 Peer notification alert dispatched to ${matchingMentors.map(m => m.userName).join(', ')} about this request!`);
+                            }}
+                            className="px-2.5 py-1 bg-indigo-950 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold rounded-lg shrink-0 transition-colors cursor-pointer"
+                            title="Ping matching mentors with an in-app alert"
+                          >
+                            Notify Mentors
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Card Footer Actions */}

@@ -48,7 +48,7 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
   // Shared Code Editor State
   const [codeLanguage, setCodeLanguage] = useState<'typescript' | 'python' | 'javascript' | 'html'>('typescript');
   const [codeSnippet, setCodeSnippet] = useState<string>(
-    `// Live Collaborative Workspace - ${session.title}\n// Edit code together during your WebRTC session\n\nfunction calculateSkillSwapCredits(hoursTaught: number): number {\n  const baseCreditRate = 1.0; // 1 Hour = 1 Credit\n  return hoursTaught * baseCreditRate;\n}\n\nconsole.log("Escrow Session Initialized for ${session.skillTitle}");\nconsole.log("Calculated Credits:", calculateSkillSwapCredits(1.5));`
+    `// Live Collaborative Workspace - ${session?.title || ''}\n// Edit code together during your WebRTC session\n\nfunction calculateSkillSwapCredits(hoursTaught: number): number {\n  const baseCreditRate = 1.0; // 1 Hour = 1 Credit\n  return hoursTaught * baseCreditRate;\n}\n\nconsole.log("Escrow Session Initialized for ${session?.skillTitle || ''}");\nconsole.log("Calculated Credits:", calculateSkillSwapCredits(1.5));`
   );
   const [codeOutput, setCodeOutput] = useState<string | null>(null);
   const [isRunningCode, setIsRunningCode] = useState<boolean>(false);
@@ -62,7 +62,7 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
     setIsRunningCode(true);
     setTimeout(() => {
       setIsRunningCode(false);
-      setCodeOutput(`[LOG] Escrow Session Initialized for ${session.skillTitle}\n[LOG] Calculated Credits: 1.5\n[SUCCESS] Code compiled with 0 errors.`);
+      setCodeOutput(`[LOG] Escrow Session Initialized for ${session?.skillTitle || ''}\n[LOG] Calculated Credits: 1.5\n[SUCCESS] Code compiled with 0 errors.`);
     }, 800);
   };
 
@@ -78,7 +78,7 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
 
   const [completedAgenda, setCompletedAgenda] = useState<Record<number, boolean>>({});
   const [sessionNotes, setSessionNotes] = useState<string>(
-    `# Session Notes - ${session.title}\nDate: ${session.date}\n\n- Key takeaways:\n- Resources & links:\n- Next practice exercises:`
+    `# Session Notes - ${session?.title || ''}\nDate: ${session?.date || ''}\n\n- Key takeaways:\n- Resources & links:\n- Next practice exercises:`
   );
 
   // AI Roadmap state
@@ -143,7 +143,9 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
 
   const handleFinishAndRate = (e: React.FormEvent) => {
     e.preventDefault();
-    onCompleteSession(session.id, rating, feedback);
+    if (session) {
+      onCompleteSession(session.id, rating, feedback);
+    }
     setShowCompletionModal(false);
     onClose();
   };

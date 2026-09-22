@@ -89,9 +89,17 @@ const allowedOrigins = [...defaultOrigins, ...envOrigins];
 
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (!origin || isDev || allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.includes('ai.studio')) {
-      res.header('Access-Control-Allow-Origin', origin || '*');
+    const isAllowed =
+      !origin ||
+      isDev ||
+      allowedOrigins.includes(origin) ||
+      (origin && (origin.endsWith('.run.app') || origin.endsWith('.onrender.com') || origin.includes('ai.studio')));
+
+    if (isAllowed) {
+      res.header('Access-Control-Allow-Origin', origin || allowedOrigins[0] || '*');
       res.header('Vary', 'Origin');
+    } else {
+      return res.status(403).json({ error: 'Origin not allowed' });
     }
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -129,32 +137,6 @@ app.use(
     },
   })
 );
-
-// Migration and repair files direct download endpoints
-app.get('/download/skillswap.zip', (_req, res) => {
-  const filePath = path.join(process.cwd(), 'skillswap_bundle.zip');
-  res.download(filePath, 'skillswap.zip');
-});
-
-app.get('/download/push_to_github.sh', (_req, res) => {
-  const filePath = path.join(process.cwd(), 'push_to_github.sh');
-  res.download(filePath, 'push_to_github.sh');
-});
-
-app.get('/download/fix_auth_and_sync.py', (_req, res) => {
-  const filePath = path.join(process.cwd(), 'fix_auth_and_sync.py');
-  res.download(filePath, 'fix_auth_and_sync.py');
-});
-
-app.get('/download/supabase_transition.py', (_req, res) => {
-  const filePath = path.join(process.cwd(), 'supabase_transition.py');
-  res.download(filePath, 'supabase_transition.py');
-});
-
-app.get('/download/SUPABASE_SCHEMA.sql', (_req, res) => {
-  const filePath = path.join(process.cwd(), 'SUPABASE_SCHEMA.sql');
-  res.download(filePath, 'SUPABASE_SCHEMA.sql');
-});
 
 app.use('/api', apiLimiter);
 app.use(stripeRouter);
@@ -204,6 +186,7 @@ app.post("/api/cloud/:collection/:id", verifyFirebaseToken, async (req: Authenti
     if (collectionName === 'users' && id !== uid) {
       return res.status(403).json({ error: 'Cannot modify another user profile' });
     }
+    // Prevent client from directly overwriting sensitive financial fields in users table
     if (collectionName === 'users') {
       delete body.timeCredits;
       delete body.escrowLockedCredits;

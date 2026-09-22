@@ -10,8 +10,13 @@ import {
 import { auth } from '../firebase';
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const token = await auth.currentUser?.getIdToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (!auth.currentUser) return {};
+  try {
+    const token = await auth.currentUser.getIdToken(false);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
 }
 
 export const api = {

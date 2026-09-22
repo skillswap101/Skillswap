@@ -46,6 +46,8 @@ export interface User {
   skillsDesired?: string[];
   skillsNeeded?: string[];
   skillsWanted?: string[];
+  languages?: { language: string; fluency: 'Native' | 'Fluent' | 'Conversational' | 'Learning' }[];
+  socialLinks?: { github?: string; linkedin?: string; website?: string; twitter?: string };
 }
 
 export type UserProfile = User;
