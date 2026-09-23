@@ -88,21 +88,24 @@ router.post('/api/v1/mpesa/pay', authenticateUser, async (req, res) => {
 });
 
 // Read-only status check for the frontend to poll while waiting for the
-// callback. Never mutates anything - cannot be used to self-fulfill.
+// callback. Validates that the payment belongs to the authenticated caller (prevents BOLA/IDOR).
 router.get('/api/v1/mpesa/status/:checkoutRequestId', authenticateUser, async (req, res) => {
     try {
-        const status = await getPendingPaymentStatus('mpesa', req.params.checkoutRequestId);
-        if (!status) return res.status(404).json({ error: 'Not found' });
-        return res.json({ status });
+        const pending = await getPendingPayment('mpesa', req.params.checkoutRequestId);
+        if (!pending) return res.status(404).json({ error: 'Payment not found' });
+        if (pending.userId !== req.user.uid) {
+            return res.status(403).json({ error: 'Access denied: Payment does not belong to caller' });
+        }
+        return res.json({ status: pending.status });
     } catch (error) {
         return res.status(500).json({ error: 'Status check failed' });
     }
 });
 
-// Instant confirm for sandbox/test mode (Gated behind environment flag and ownership check)
+// Instant confirm for sandbox/test mode (STRICTLY gated: disabled in production, requires explicit flag and ownership check)
 router.post('/api/v1/mpesa/simulate-confirm', authenticateUser, express.json(), async (req, res) => {
-    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
-        return res.status(404).json({ error: 'Payment simulator disabled in production' });
+    if (process.env.NODE_ENV === 'production' || process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
+        return res.status(403).json({ error: 'Payment simulator strictly disabled' });
     }
 
     try {

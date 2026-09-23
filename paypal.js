@@ -150,11 +150,28 @@ router.post('/api/v1/paypal/capture-order', authenticateUser, express.json(), as
             return res.status(409).json({ success: false, error: `Order already ${pending.status}` });
         }
 
-        if (orderID.startsWith('PP_SIM_') || !isPaypalConfigured()) {
-            await fulfillPendingPayment('paypal', orderID, `PP_RECEIPT_${Date.now()}`);
+        if (!isPaypalConfigured()) {
+            if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_PAYMENT_SIMULATORS === 'true' && orderID.startsWith('PP_SIM_')) {
+                await fulfillPendingPayment('paypal', orderID, `PP_SIM_RECEIPT_${Date.now()}`);
+                return res.json({
+                    success: true,
+                    message: 'PayPal payment captured successfully (Simulator Mode)',
+                    orderId: orderID,
+                    creditsAdded: pending.creditHours,
+                    status: 'COMPLETED'
+                });
+            }
+            return res.status(503).json({ success: false, error: 'PayPal gateway is not configured on the server' });
+        }
+
+        if (orderID.startsWith('PP_SIM_')) {
+            if (process.env.NODE_ENV === 'production' || process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
+                return res.status(403).json({ success: false, error: 'Simulated payments are disabled in production' });
+            }
+            await fulfillPendingPayment('paypal', orderID, `PP_SIM_RECEIPT_${Date.now()}`);
             return res.json({
                 success: true,
-                message: 'PayPal payment captured successfully (Sandbox Mode)',
+                message: 'PayPal payment captured successfully (Simulator Mode)',
                 orderId: orderID,
                 creditsAdded: pending.creditHours,
                 status: 'COMPLETED'

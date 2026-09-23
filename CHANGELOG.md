@@ -4,6 +4,12 @@ All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
 ### Added
+- **Phase 1: Critical Security Remediations (`docs/CHANGELOG_SECURITY.md`)**:
+  - Eliminated unearned credit generation in PayPal capture (`paypal.js`) by removing fallback bypass and strictly gating simulation behind non-production flags.
+  - Resolved Broken Object-Level Authorization (BOLA/IDOR) on M-Pesa transaction polling (`mpesaPay.js`) by asserting caller ownership against pending payment records.
+  - Hardened M-Pesa simulated confirmation endpoint to fail closed in production environments.
+  - Purged hardcoded JWT and secret tokens from `server/supabaseClient.ts` and `src/lib/supabase.ts`.
+  - Consolidated `middleware/auth.js` with the authoritative `firebaseAdmin.ts` instance, ensuring fail-closed authentication.
 - **SkillSwap 5.0 Master Protocol & GitHub Agent Directives (`/docs/MASTER_AGENT_INSTRUCTIONS.md`, `/.github/copilot-instructions.md`)**: Codified the complete 52-section operational mandate, 7-phase roadmap, and continuous communication & escalation protocol.
 - **Phase 0 Comprehensive Production Audit Suite**:
   - `AUDIT_REPORT.md`: Master production audit synthesizing all subsystem findings.
