@@ -77,7 +77,20 @@ export async function fulfillPendingPayment(
   pending.completedAt = new Date().toISOString();
   inMemoryPending.set(paymentId, pending);
 
-  // Increment user's time credits in Supabase
+  // Attempt atomic fulfillment via PostgreSQL RPC first
+  try {
+    const { data: rpcSuccess, error: rpcErr } = await supabase.rpc("fulfill_pending_payment", {
+      p_payment_id: paymentId,
+      p_gateway_receipt: gatewayReceipt || null,
+    });
+    if (!rpcErr && rpcSuccess === true) {
+      return true;
+    }
+  } catch (rpcEx: any) {
+    console.warn("[payments] RPC fulfill_pending_payment notice (using fallback):", rpcEx.message);
+  }
+
+  // Fallback: Increment user's time credits in Supabase
   try {
     const { data: user } = await supabase
       .from("users")
