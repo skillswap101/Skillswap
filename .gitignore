@@ -16,3 +16,5 @@ serviceaccountkey.json
 *.key
 *.p12
 *.crt
+FIREBASE_AUDIT.md
+sync_github_fixes.py
