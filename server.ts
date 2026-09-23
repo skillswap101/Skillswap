@@ -112,7 +112,11 @@ app.use((req, res, next) => {
     next();
 });
 
-const PORT = Number(process.env.PORT || 3000);
+// Port Binding: In production on Render/Cloud hosting, read process.env.PORT.
+// In local dev and AI Studio preview environment, dev server must run on port 3000.
+const PORT = process.env.NODE_ENV === 'production'
+  ? Number(process.env.PORT || 3000)
+  : 3000;
 
 // General API rate limit - applies to everything under /api
 const apiLimiter = rateLimit({

@@ -15,7 +15,10 @@ export const isSupabaseConfigured = Boolean(
   !supabaseAnonKey.includes('YOUR_')
 );
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+// Fallback dummy token format to prevent createClient constructor from throwing when unconfigured
+const effectiveAnonKey = supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+
+export const supabase = createClient(supabaseUrl, effectiveAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
