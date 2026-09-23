@@ -1,40 +1,40 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl =
+const rawSupabaseUrl =
   import.meta.env.VITE_SUPABASE_URL ||
-  'https://beekpvtusbijyrzkszwe.supabase.co';
+  import.meta.env.SUPABASE_URL ||
+  '';
 
-const supabaseAnonKey =
+const rawSupabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.SUPABASE_ANON_KEY ||
   '';
 
 export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseAnonKey &&
-  !supabaseUrl.includes('YOUR_') &&
-  !supabaseAnonKey.includes('YOUR_')
+  rawSupabaseUrl &&
+  rawSupabaseAnonKey &&
+  !rawSupabaseUrl.includes('placeholder') &&
+  !rawSupabaseUrl.includes('YOUR_') &&
+  !rawSupabaseAnonKey.includes('YOUR_')
 );
 
-// Fallback dummy token format to prevent createClient constructor from throwing when unconfigured
-const effectiveAnonKey = supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+// Fallback dummy credentials to prevent createClient constructor from throwing when unconfigured
+const effectiveUrl = rawSupabaseUrl || 'https://placeholder.supabase.co';
+const effectiveAnonKey = rawSupabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
 
-export const supabase = createClient(supabaseUrl, effectiveAnonKey, {
+export const supabase = createClient(effectiveUrl, effectiveAnonKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
   },
 });
 
-/**
- * Attaches the Firebase JWT token to the client's Authorization header
- * so Supabase RLS can evaluate auth.uid() if Third-Party JWT is enabled in Supabase Dashboard.
- */
 export function setSupabaseAuthToken(token: string | null) {
   if (!supabase) return;
   try {
     const headers = (supabase as any)?.rest?.headers;
     if (!headers) return;
-    headers['Authorization'] = token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
+    headers['Authorization'] = token ? `Bearer ${token}` : `Bearer ${effectiveAnonKey}`;
   } catch (e) {
     console.warn('[Supabase] Failed to update auth header:', e);
   }
