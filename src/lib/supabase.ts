@@ -1,42 +1,47 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const rawSupabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.SUPABASE_URL ||
-  '';
-
-const rawSupabaseAnonKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.SUPABASE_ANON_KEY ||
-  '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseConfigured = Boolean(
-  rawSupabaseUrl &&
-  rawSupabaseAnonKey &&
-  !rawSupabaseUrl.includes('placeholder') &&
-  !rawSupabaseUrl.includes('YOUR_') &&
-  !rawSupabaseAnonKey.includes('YOUR_')
+  supabaseUrl &&
+  supabaseAnonKey &&
+  !supabaseUrl.includes('YOUR_') &&
+  !supabaseAnonKey.includes('YOUR_')
 );
 
-// Fallback dummy credentials to prevent createClient constructor from throwing when unconfigured
-const effectiveUrl = rawSupabaseUrl || 'https://placeholder.supabase.co';
-const effectiveAnonKey = rawSupabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+const missingConfigurationError = new Error(
+  'Supabase client configuration is missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+);
 
-export const supabase = createClient(effectiveUrl, effectiveAnonKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+// Do not manufacture a token when local configuration is absent. The proxy preserves
+// the existing client API while making misconfiguration fail clearly at use time.
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+  : new Proxy({} as SupabaseClient, {
+      get() {
+        throw missingConfigurationError;
+      },
+    });
 
 export function setSupabaseAuthToken(token: string | null) {
-  if (!supabase) return;
+  if (!isSupabaseConfigured) return;
+
   try {
     const headers = (supabase as any)?.rest?.headers;
     if (!headers) return;
-    headers['Authorization'] = token ? `Bearer ${token}` : `Bearer ${effectiveAnonKey}`;
-  } catch (e) {
-    console.warn('[Supabase] Failed to update auth header:', e);
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    } else {
+      delete headers.Authorization;
+    }
+  } catch (error) {
+    console.warn('[Supabase] Failed to update auth header:', error);
   }
 }
 
