@@ -14,8 +14,7 @@ const missingConfigurationError = new Error(
   'Supabase client configuration is missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
 );
 
-// Do not manufacture a token when local configuration is absent. The proxy preserves
-// the existing client API while making misconfiguration fail clearly at use time.
+// Preserve the client API without manufacturing credentials when configuration is absent.
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
