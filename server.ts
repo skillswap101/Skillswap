@@ -82,34 +82,41 @@ app.use(
   })
 );
 
-// Restrict CORS to known frontend origins or allow dev/preview
-const defaultOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+// Restrict CORS to an explicit allowlist.
+// Local development origins are enabled only outside production.
+// Production origins must be explicitly configured with ALLOWED_ORIGINS.
+const defaultOrigins = isDev
+  ? ['http://localhost:3000', 'http://localhost:5173']
+  : [];
+
 const envOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
   .map(o => o.trim())
   .filter(Boolean);
-const allowedOrigins = [...defaultOrigins, ...envOrigins];
+
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    const isAllowed =
-      !origin ||
-      isDev ||
-      allowedOrigins.includes(origin) ||
-      (origin && (origin.endsWith('.run.app') || origin.endsWith('.onrender.com') || origin.includes('ai.studio')));
+  const origin = req.headers.origin;
 
-    if (isAllowed) {
-      res.header('Access-Control-Allow-Origin', origin || allowedOrigins[0] || '*');
-      res.header('Vary', 'Origin');
-    } else {
-      return res.status(403).json({ error: 'Origin not allowed' });
-    }
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-    next();
+  // Non-browser/server-to-server requests do not send Origin.
+  if (!origin) {
+    res.header('Vary', 'Origin');
+  } else if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+  } else {
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
+  next();
 });
 
 // Port Binding: In production on Render/Cloud hosting, read process.env.PORT.
