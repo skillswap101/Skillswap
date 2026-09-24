@@ -53,8 +53,8 @@ export async function fulfillPendingPayment(
     if (!error && data) {
       pending = data;
     }
-  } catch {
-    // Fall back to in-memory record below
+  } catch (err: any) {
+    console.warn(`[payments] Failed to query pendingPayments for ${paymentId}:`, err.message);
   }
 
   if (!pending) {
@@ -66,79 +66,56 @@ export async function fulfillPendingPayment(
     return false;
   }
 
-  if (pending.status !== "pending") {
-    // Already fulfilled or failed
+  if (pending.status === "completed") {
+    console.log(`[payments] Payment ${paymentId} is already completed; skipping redundant fulfillment.`);
     return false;
   }
 
-  // Update in-memory record status
-  pending.status = "completed";
-  pending.gatewayReceipt = gatewayReceipt || null;
-  pending.completedAt = new Date().toISOString();
-  inMemoryPending.set(paymentId, pending);
+  if (pending.status !== "pending") {
+    console.warn(`[payments] Payment ${paymentId} has status '${pending.status}'; cannot fulfill.`);
+    return false;
+  }
 
-  // Attempt atomic fulfillment via PostgreSQL RPC first
+  // Attempt atomic fulfillment via PostgreSQL RPC.
+  // The RPC acquires row locks (SELECT ... FOR UPDATE) on pendingPayments and users,
+  // increments timeCredits, marks payment as 'completed', and logs the transaction ledger atomically.
+  // Note: We deliberately DO NOT mutate in-memory or database records prior to RPC completion.
   try {
-    const { data: rpcSuccess, error: rpcErr } = await supabase.rpc("fulfill_pending_payment", {
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("fulfill_pending_payment", {
       p_payment_id: paymentId,
       p_gateway_receipt: gatewayReceipt || null,
     });
-    if (!rpcErr && rpcSuccess === true) {
+
+    if (rpcErr) {
+      console.error(
+        `[payments] RPC fulfill_pending_payment failed for ${paymentId}:`,
+        rpcErr.message,
+        rpcErr.details || ""
+      );
+      // Strictly fail-closed: do not grant credits or mark payment completed
+      return false;
+    }
+
+    if (rpcRes === true || (typeof rpcRes === "object" && rpcRes?.success === true)) {
+      // ONLY update in-memory record status AFTER successful atomic fulfillment in the database
+      pending.status = "completed";
+      pending.gatewayReceipt = gatewayReceipt || null;
+      pending.completedAt = new Date().toISOString();
+      inMemoryPending.set(paymentId, pending);
+
+      console.log(`[payments] Payment ${paymentId} fulfilled successfully via atomic RPC.`);
       return true;
     }
+
+    console.warn(
+      `[payments] RPC fulfill_pending_payment returned non-success (${JSON.stringify(rpcRes)}) for ${paymentId}. No credits granted.`
+    );
+    return false;
   } catch (rpcEx: any) {
-    console.warn("[payments] RPC fulfill_pending_payment notice (using fallback):", rpcEx.message);
+    console.error(`[payments] Exception during RPC fulfill_pending_payment for ${paymentId}:`, rpcEx.message);
+    // Strictly fail-closed: never fall back to non-atomic balance updates
+    return false;
   }
-
-  // Fallback: Increment user's time credits in Supabase
-  try {
-    const { data: user } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", pending.userId)
-      .maybeSingle();
-
-    const currentBalance = Number(user?.timeCredits) || 0;
-    const hoursToAdd = Number(pending.creditHours) || 0;
-
-    await supabase
-      .from("users")
-      .update({
-        timeCredits: currentBalance + hoursToAdd,
-        updatedAt: new Date().toISOString(),
-      })
-      .eq("id", pending.userId);
-  } catch (e: any) {
-    console.warn("[payments] Failed to update user credits in Supabase:", e.message);
-  }
-
-  // Attempt marking pending payment completed in Supabase
-  try {
-    await supabase
-      .from("pendingPayments")
-      .update({
-        status: "completed",
-        gatewayReceipt: gatewayReceipt || null,
-        completedAt: new Date().toISOString(),
-      })
-      .eq("id", paymentId);
-  } catch {}
-
-  // Attempt recording in transactions ledger
-  try {
-    await supabase.from("transactions").insert({
-      userId: pending.userId,
-      gateway,
-      gatewayRef,
-      amount: pending.amount,
-      credits: pending.creditHours,
-      currency: pending.currency,
-      status: "SUCCESS",
-      createdAt: new Date().toISOString(),
-    });
-  } catch {}
-
-  return true;
 }
 
 export async function markPendingPaymentFailed(
