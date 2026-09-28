@@ -50,6 +50,7 @@
 - [ ] Structured logs.
 - [ ] Error tracking.
 - [ ] Metrics/alerts.
+- [ ] Supabase pg_cron keep-awake job applied (`database/migrations/003_render_keep_awake_cron.sql`).
 - [ ] Firestore backup/restore plan.
 - [ ] HTTPS reverse proxy/load balancer.
 - [ ] Staging smoke test passes.

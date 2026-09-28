@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SwapProposal, ChatMessage, User } from '../types';
 import { networkNotifier } from '../utils/networkNotifier';
+import { api } from '../lib/api';
 
 export interface NotificationItem {
   id: string;
@@ -63,26 +64,40 @@ export const GlobalNotificationListener: React.FC<GlobalNotificationListenerProp
     } catch (e) {
       console.error('Failed to load notifications', e);
     }
-    return [
-      {
-        id: 'notif-1',
-        type: 'network',
-        title: 'Network Synchronized',
-        body: 'Real-time peer notification engine active and monitoring incoming proposal requests.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        read: false,
-      },
-      {
-        id: 'notif-2',
-        type: 'proposal',
-        title: 'New Swap Proposal Received',
-        body: 'Elena Rostova proposed: Front-End UI Design in exchange for Spanish Conversation.',
-        timestamp: new Date(Date.now() - 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        read: true,
-        actionTab: 'swaps',
-      },
-    ];
+    return [];
   });
+
+  // Fetch real notifications from database
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+
+    const fetchPersistedNotifications = async () => {
+      try {
+        const persisted = await api.getNotifications();
+        if (!cancelled && persisted && persisted.length > 0) {
+          const mapped: NotificationItem[] = persisted.map((n: any) => ({
+            id: n.id,
+            type: n.category === 'proposal' ? 'proposal' : n.category === 'chat' ? 'chat' : 'system',
+            title: n.title || 'Notification',
+            body: n.previewText || n.body || n.message || '',
+            timestamp: n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+            read: Boolean(n.isRead || n.read),
+            actionTab: n.actionTab,
+          }));
+          setNotifications(mapped);
+        }
+      } catch {
+        // Fall back gracefully
+      }
+    };
+
+    fetchPersistedNotifications();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.id, isOpen]);
 
   const prevProposalsLengthRef = useRef<number>(proposals.length);
   const prevMessagesLengthRef = useRef<number>(messages.length);
@@ -131,7 +146,11 @@ export const GlobalNotificationListener: React.FC<GlobalNotificationListenerProp
       prevProposalsLengthRef.current = proposals.length;
     } else if (proposals.length > prevProposalsLengthRef.current) {
       const newestProposal = proposals[proposals.length - 1];
-      if (newestProposal) {
+      if (
+        newestProposal &&
+        newestProposal.recipientId === currentUser.id &&
+        newestProposal.senderId !== currentUser.id
+      ) {
         const title = 'New Swap Proposal Alert!';
         const body = `Proposal from ${newestProposal.offeredSkillTitle || 'Peer'} to exchange for "${newestProposal.requestedSkillTitle || 'Skill'}"`;
         
@@ -152,7 +171,7 @@ export const GlobalNotificationListener: React.FC<GlobalNotificationListenerProp
       }
       prevProposalsLengthRef.current = proposals.length;
     }
-  }, [proposals, showToast]);
+  }, [proposals, currentUser.id, showToast]);
 
   // Monitor Incoming Chat Messages
   useEffect(() => {
@@ -287,8 +306,13 @@ export const GlobalNotificationListener: React.FC<GlobalNotificationListenerProp
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await api.markAllNotificationsRead();
+    } catch {
+      // safe ignore
+    }
     showToast('Marked all notifications as read.');
   };
 
@@ -390,37 +414,39 @@ export const GlobalNotificationListener: React.FC<GlobalNotificationListenerProp
               </div>
             </div>
 
-            {/* Simulation Quick Testing Buttons */}
-            <div className="p-3 bg-indigo-950/40 border-b border-slate-800 space-y-1.5">
-              <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
-                Test Real-Time Event Listener
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={simulateIncomingProposal}
-                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <ArrowRightLeft className="w-3 h-3 text-cyan-300" />
-                  <span>Simulate Proposal</span>
-                </button>
+            {/* Simulation Quick Testing Buttons (Development Only) */}
+            {import.meta.env.DEV && (
+              <div className="p-3 bg-indigo-950/40 border-b border-slate-800 space-y-1.5">
+                <p className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
+                  Test Real-Time Event Listener (Dev Only)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={simulateIncomingProposal}
+                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <ArrowRightLeft className="w-3 h-3 text-cyan-300" />
+                    <span>Simulate Proposal</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={simulateIncomingMessage}
-                  className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <Send className="w-3 h-3 text-amber-300" />
-                  <span>Simulate Message</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={simulateIncomingMessage}
+                    className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Send className="w-3 h-3 text-amber-300" />
+                    <span>Simulate Message</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Notification Items List */}
             <div className="max-h-64 overflow-y-auto divide-y divide-slate-800/60 p-2">
               {notifications.length === 0 ? (
                 <div className="p-6 text-center text-slate-500 text-xs">
-                  No notifications yet. Send or simulate a swap proposal to test alerts!
+                  No notifications yet. You're all caught up!
                 </div>
               ) : (
                 notifications.map((n) => (

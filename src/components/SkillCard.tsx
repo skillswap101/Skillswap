@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Star, CheckCircle2, Video, MapPin, ArrowRightLeft, Clock, Sparkles, ShieldCheck, Award, Bookmark, Tag, Eye, BarChart3, Calendar, Heart } from 'lucide-react';
 import { Skill } from '../types';
+import { usePresence } from '../context/PresenceContext';
 
 interface SkillCardProps {
   skill: Skill;
@@ -28,6 +29,9 @@ export const SkillCard: React.FC<SkillCardProps> = ({
 }) => {
   const [likes, setLikes] = useState(skill.likesCount || 12);
   const [liked, setLiked] = useState(skill.isLiked || false);
+  const { isUserOnline, getUserPresenceLabel } = usePresence();
+  const isMentorOnline = isUserOnline(skill.userId);
+  const mentorPresenceLabel = getUserPresenceLabel(skill.userId);
 
   const handleLikeClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -177,8 +181,10 @@ export const SkillCard: React.FC<SkillCardProps> = ({
                 className="w-8 h-8 rounded-full object-cover border border-indigo-400/50"
               />
               <span 
-                className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-900 absolute -top-0.5 -right-0.5 shadow-sm"
-                title="Mentor currently online"
+                className={`w-2.5 h-2.5 rounded-full border border-slate-900 absolute -top-0.5 -right-0.5 shadow-sm ${
+                  isMentorOnline ? 'bg-emerald-400' : 'bg-slate-500'
+                }`}
+                title={mentorPresenceLabel}
               />
               {skill.verified && (
                 <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400 bg-slate-900 rounded-full absolute -bottom-0.5 -right-0.5 fill-current" />
@@ -187,7 +193,12 @@ export const SkillCard: React.FC<SkillCardProps> = ({
             <div>
               <div className="flex items-center gap-1">
                 <p className="text-xs font-medium text-slate-200 line-clamp-1">{skill.userName}</p>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" title="Online" />
+                <span 
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isMentorOnline ? 'bg-emerald-400' : 'bg-slate-500'
+                  }`} 
+                  title={mentorPresenceLabel} 
+                />
                 {isVerifiedMentor && (
                   <span title="5+ Sessions Completed" className="inline-flex">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />

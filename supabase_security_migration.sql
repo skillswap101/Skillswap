@@ -38,7 +38,7 @@ alter table public."webrtcRooms" enable row level security;
 -- 3. Create Atomic Payment Fulfillment RPC Function
 create or replace function public.fulfill_pending_payment(
   p_payment_id text, 
-  p_gateway_receipt text
+  p_gateway_receipt text default null
 ) 
 returns boolean 
 language plpgsql 
@@ -76,16 +76,22 @@ begin
   set status = 'completed', "gatewayReceipt" = p_gateway_receipt, "completedAt" = now()::text 
   where id = payment_row.id;
   
+  -- Strengthen transaction ledger idempotency: tie id to payment_row.id
   insert into public.transactions (
     id, "userId", gateway, "gatewayRef", amount, credits, currency, status, "createdAt"
   ) values ( 
-    gen_random_uuid()::text, payment_row."userId", payment_row.gateway, payment_row."gatewayRef", 
+    payment_row.id, payment_row."userId", payment_row.gateway, payment_row."gatewayRef", 
     payment_row.amount, payment_row."creditHours", payment_row.currency, 'SUCCESS', now()::text 
-  );
+  ) on conflict (id) do nothing;
   
   return true; 
 end;
 $$;
+
+-- 4. Idempotency & Financial Uniqueness Constraints
+create unique index if not exists idx_transactions_payment_id on public.transactions(id);
+create unique index if not exists idx_transactions_gateway_ref on public.transactions(gateway, "gatewayRef");
+create unique index if not exists idx_pending_payments_gateway_ref on public."pendingPayments"(gateway, "gatewayRef");
 
 -- Restrict RPC execution strictly to the backend service role
 revoke all on function public.fulfill_pending_payment(text, text) from public, anon, authenticated;

@@ -3,7 +3,54 @@
 All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
+### Bug Fixes & Cloud State Resilience
+- **Offline & Unconfigured Cloud State Bridge (`useCloudStateBridge.ts` & `storageService.ts`)**:
+  - Resolved `TypeError: Failed to fetch` during message sending (`addMessageToCloud`) and avatar uploads by checking `isSupabaseConfigured()`.
+  - Added optimistic message updating in local state and offline cache (`localStorage`) before performing network sync.
+  - Guarded initial queries and real-time channel subscriptions against unconfigured Supabase endpoints, preventing DNS lookup failures (`placeholder.supabase.co`).
+  - Added graceful data URL fallback in `uploadAvatar` for unconfigured environments.
+
+### Operations & Render Keep-Awake Cron
+- **Render Uptime Automation (`database/migrations/003_render_keep_awake_cron.sql`)**:
+  - Integrated Supabase `pg_cron` and `pg_net` scheduled task to ping `https://skillswap-0919.onrender.com/api/health` every 12 minutes (`*/12 * * * *`).
+  - Added safe idempotent unschedule guards (`if exists ... perform cron.unschedule`) to prevent duplicate job naming collisions.
+  - Exempted `/api/health` from rate-limiting in `server.ts` and removed duplicate health route definition to guarantee uninterrupted HTTP 200 uptime responses.
+  - Documented verification queries for `cron.job`, `cron.job_run_details`, and `net._http_response`.
+
+### Security & Financial Hardening
+- **Payment Fulfillment Architecture Hardening (`paymentsService.ts`)**:
+  - Removed dangerous non-atomic fallback that read balance and performed uncoordinated balance increments outside transactions.
+  - Eliminated premature mutation of in-memory payment status before database RPC commitment.
+  - Aligned PostgreSQL RPC parameter signature to `{ p_payment_id, p_gateway_receipt }` and enforced fail-closed response handling.
+  - Guaranteed idempotency by tying ledger entries directly to `payment_row.id` with `ON CONFLICT (id) DO NOTHING`.
+  - Added uniqueness indexes on `transactions(id)`, `transactions(gateway, "gatewayRef")`, and `pendingPayments(gateway, "gatewayRef")`.
+  - Hardened Stripe, M-Pesa, and PayPal webhook/capture fulfillment to reject fake credits, retry failed webhooks, and safely acknowledge duplicate submissions.
+  - Added automated test suite `scripts/test-payments-atomic.ts` covering RPC parameter alignment, duplicate/repeated call idempotency, and concurrent race-condition prevention.
+
 ### Added
+- **Phase 2: Database & Financial Integrity**:
+  - Implemented atomic `fulfill_pending_payment` RPC in PostgreSQL to guarantee idempotency and ACID credit assignment.
+  - Added indexes on `proposals(senderId, recipientId)`, `sessions(mentorId, learnerId)`, and `messages(swapProposalId)`.
+  - Upgraded `paymentsService.ts` to enforce server-side atomic fulfillment.
+- **Phase 3: API Architecture & Modular Route Extraction**:
+  - Added RESTful endpoints in `server.ts` for `/api/users`, `/api/users/:id`, and `/api/users/:id` (PATCH with strict ownership check).
+  - Added `/api/listings` (GET query with filters and POST with authenticated creator assignment).
+  - Added `/api/escrow/release`, `/api/escrow/refund`, and `/api/escrow/dispute` routes.
+  - Added `/api/transactions` authenticated ledger query.
+- **Phase 4: Frontend Architecture & Escrow Sync**:
+  - Eliminated client-side over-fetching in `useCloudStateBridge.ts` by scoping queries to authenticated user only.
+  - Migrated `ChatPortal.tsx` and `CallActionModal.tsx` from local storage escrow mocks to server-authoritative API calls.
+  - Replaced fake hardcoded transaction data in `TimeCreditsView.tsx` with authentic transaction ledger records.
+- **Phase 5: Mock Data & Orphan Code Cleanup**:
+  - Deleted 9 orphaned / duplicate files: `src/utils/escrowManager.ts`, `src/utils/firebaseEscrow.ts`, `src/components/CreateListingModal.tsx`, `src/components/LiveSessionRoom.tsx`, `src/components/Navbar.tsx`, `src/components/ProposeSwapModal.tsx`, `src/components/SkillMarketplace.tsx`, `src/services/api.js`, `src/utils/firestoreRepository.ts`.
+  - Removed `FALLBACK_COMMUNITY_MEMBERS` mock data from `UserDirectoryModal.tsx`, providing authentic marketplace user derivation and clean empty states.
+- **Phase 6: Testing & Automated Validation**:
+  - Implemented `scripts/test-integrity.cjs` covering health checks, fail-closed auth guards, forged token rejection, and public endpoint integrity.
+  - Added `"test": "node scripts/test-integrity.cjs"` to `package.json`.
+- **Phase 7: Production Hardening & Final Verification**:
+  - Verified full TypeScript compilation (`tsc --noEmit`) and Vite + Esbuild production build (`npm run build`).
+  - Verified Express SPA fallback routes and Render dynamic port binding.
+
 - **Phase 1: Critical Security Remediations (`docs/CHANGELOG_SECURITY.md`)**:
   - Eliminated unearned credit generation in PayPal capture (`paypal.js`) by removing fallback bypass and strictly gating simulation behind non-production flags.
   - Resolved Broken Object-Level Authorization (BOLA/IDOR) on M-Pesa transaction polling (`mpesaPay.js`) by asserting caller ownership against pending payment records.

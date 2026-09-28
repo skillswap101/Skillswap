@@ -92,6 +92,8 @@ import { EmailNotificationsModal } from './components/EmailNotificationsModal';
 import { GlobalNotificationListener } from './components/GlobalNotificationListener';
 import { UnifiedCheckoutModal } from './components/UnifiedCheckoutModal';
 import { AuditDashboardModal } from './components/AuditDashboardModal';
+import HealthStatus from './components/HealthStatus';
+import { useRenderHeartbeat } from './hooks/useRenderHeartbeat';
 import { BadgesAndAchievementsModal } from './components/BadgesAndAchievementsModal';
 import { GamificationBadges } from './components/GamificationBadges';
 import { LearningAnalytics } from './components/LearningAnalytics';
@@ -142,6 +144,12 @@ const CATEGORY_CONFIG: Partial<Record<SkillCategory, { icon: React.ReactNode; co
 };
 
 export default function App() {
+  // Client-side Render heartbeat to prevent spin-down during active sessions
+  useRenderHeartbeat({
+    intervalMs: 13 * 60 * 1000,
+    endpoint: '/api/health',
+  });
+
   // Navigation
   const [activeTab, setActiveTab] = useState<string>('explore');
   const [isUnifiedCheckoutOpen, setIsUnifiedCheckoutOpen] = useState(false);
@@ -198,6 +206,8 @@ export default function App() {
     addSkillToCloud,
     addProposalToCloud,
     addMessageToCloud,
+    markMessageReadInCloud,
+    updateUserProfileInCloud,
   } = useCloudStateBridge();
 
   // Modal controls
@@ -467,28 +477,73 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = (proposalId: string, text: string) => {
+  const handleSendMessage = async (proposalId: string, text: string): Promise<boolean> => {
+    if (!currentUser) return false;
+
+    // Find proposal to accurately determine recipient
+    const proposal = proposals.find((p) => p.id === proposalId);
+    let recipientId = '';
+    if (proposal) {
+      recipientId = proposal.senderId === currentUser.id ? proposal.recipientId : proposal.senderId;
+    }
+
+    const participantIds = [currentUser.id, recipientId].filter(Boolean);
+
     const newMsg: ChatMessage = {
       id: `msg_${Date.now()}`,
       swapProposalId: proposalId,
       senderId: currentUser.id,
       senderName: currentUser.name,
       senderAvatar: currentUser.avatar,
+      recipientId,
+      participantIds,
       message: text,
       timestamp: 'Just now',
+      read: false,
+      createdAt: new Date().toISOString(),
     };
-    setMessages([...messages, newMsg]);
-    addMessageToCloud(newMsg).catch((err) => console.warn('[App] Message cloud save warning:', err));
+
+    try {
+      await addMessageToCloud(newMsg);
+      showToast('Message sent');
+      return true;
+    } catch (err) {
+      console.error('[App] Failed to send message:', err);
+      showToast('Message failed to send. Please try again.');
+      return false;
+    }
   };
 
-  const handleAddSkill = (newSkill: Skill) => {
-    setSkills([newSkill, ...skills]);
-    addSkillToCloud(newSkill).catch((err) => console.warn('[App] Skill cloud save warning:', err));
-    setCurrentUser({
-      ...currentUser,
-      skillsOffered: [...currentUser.skillsOffered, newSkill.title],
-    });
-    showToast('New skill listing published to community marketplace!');
+  const handleAddSkill = async (newSkill: Skill): Promise<boolean> => {
+    try {
+      await addSkillToCloud(newSkill);
+      showToast('Skill posted successfully');
+      setCurrentUser((prev: any) => ({
+        ...prev,
+        skillsOffered: [...(prev?.skillsOffered || []), newSkill.title],
+      }));
+      return true;
+    } catch (err) {
+      console.error('[App] Failed to post skill:', err);
+      showToast('Skill could not be posted. Please try again.');
+      return false;
+    }
+  };
+
+  const handleUpdateUser = async (updated: User, options?: { silent?: boolean }): Promise<boolean> => {
+    try {
+      await updateUserProfileInCloud(updated);
+      if (!options?.silent) {
+        showToast('Profile updated successfully');
+      }
+      return true;
+    } catch (err) {
+      console.error('[App] Failed to update user profile:', err);
+      if (!options?.silent) {
+        showToast('Profile update failed. Please try again.');
+      }
+      return false;
+    }
   };
 
   const handleCompleteSession = async (sessionId: string, ratingVal: number, feedbackVal: string) => {
@@ -1090,6 +1145,7 @@ export default function App() {
             selectedProposalId={selectedProposalChatId}
             onSelectProposal={(propId) => setSelectedProposalChatId(propId)}
             onSendMessage={handleSendMessage}
+            onMarkMessageRead={markMessageReadInCloud}
             onStartCall={(proposalId, callType, peerName, peerAvatar, skillTitle) => {
               setActiveCall({
                 isOpen: true,
@@ -1121,7 +1177,7 @@ export default function App() {
           <div className="space-y-6">
             <ProfileView
               currentUser={currentUser}
-              onUpdateUser={setCurrentUser}
+              onUpdateUser={handleUpdateUser}
               userSkills={skills.filter((s) => s.userId === currentUser.id)}
               reviews={reviews}
               onOpenPostSkill={() => setIsPostSkillOpen(true)}
@@ -1184,12 +1240,16 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-8 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p>© 2026 SkillSwap 5.0 Community Platform. Empowering peer-to-peer knowledge exchange.</p>
+        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <p>© 2026 SkillSwap 5.0 Community Platform. Empowering peer-to-peer knowledge exchange.</p>
+            <HealthStatus />
+          </div>
           <div className="flex items-center gap-4 text-slate-400 font-medium">
             <button onClick={() => setActiveTab('explore')} className="hover:text-indigo-400">Marketplace</button>
             <button onClick={() => setActiveTab('matchmaker')} className="hover:text-indigo-400">AI Matchmaker</button>
             <button onClick={() => setActiveTab('credits')} className="hover:text-indigo-400">Time Bank</button>
+            <button onClick={() => setIsAuditDashboardOpen(true)} className="hover:text-teal-400">System Health</button>
             <button onClick={() => setIsSettingsOpen(true)} className="hover:text-indigo-400">Settings Hub</button>
             <button onClick={() => setIsTermsPrivacyOpen(true)} className="hover:text-indigo-400">Terms & Privacy</button>
           </div>
@@ -1283,9 +1343,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         currentUser={currentUser}
-        onUpdateUser={(updated) => {
-          setCurrentUser((prev) => ({ ...prev, ...updated }));
-        }}
+        onUpdateUser={handleUpdateUser}
         onOpenTermsPrivacy={() => setIsTermsPrivacyOpen(true)}
         onLogout={() => {
           logout().catch((err) => console.error('[App] Logout failed:', err));

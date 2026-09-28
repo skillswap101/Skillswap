@@ -51,9 +51,10 @@ router.post('/api/v1/mpesa/pay', authenticateUser, async (req, res) => {
                     currency: 'KES',
                 });
 
-                // In sandbox / simulated mode, auto-fulfill after a brief pause
-                // so the user experiences the full phone approval lifecycle.
-                if (result.sandbox || checkoutRequestId.startsWith('ws_CO_SIM_')) {
+                // In non-production testing mode ONLY, auto-fulfill when ALLOW_PAYMENT_SIMULATORS=true
+                if ((result.sandbox || checkoutRequestId.startsWith('ws_CO_SIM_')) &&
+                    process.env.NODE_ENV !== 'production' &&
+                    process.env.ALLOW_PAYMENT_SIMULATORS === 'true') {
                     setTimeout(async () => {
                         try {
                             await fulfillPendingPayment('mpesa', checkoutRequestId, `MPESA_SIM_${Date.now()}`);
@@ -123,7 +124,14 @@ router.post('/api/v1/mpesa/simulate-confirm', authenticateUser, express.json(), 
             return res.status(403).json({ error: 'Payment does not belong to caller' });
         }
 
-        await fulfillPendingPayment('mpesa', checkoutRequestId, `MPESA_SIM_${Date.now()}`);
+        const fulfilled = await fulfillPendingPayment('mpesa', checkoutRequestId, `MPESA_SIM_${Date.now()}`);
+        if (!fulfilled) {
+            const currentStatus = await getPendingPaymentStatus('mpesa', checkoutRequestId);
+            if (currentStatus === 'completed') {
+                return res.json({ success: true, message: 'Simulated M-Pesa payment was already completed.' });
+            }
+            return res.status(500).json({ error: 'Atomic fulfillment failed. Database stored procedure could not grant credits.' });
+        }
         return res.json({ success: true, message: 'Simulated M-Pesa payment confirmed.' });
     } catch (error) {
         return res.status(500).json({ error: error.message });

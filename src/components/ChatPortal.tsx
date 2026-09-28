@@ -15,10 +15,12 @@ import {
   ArrowRightLeft,
   FileText,
   Play,
-  Volume2
+  Volume2,
+  Loader2
 } from 'lucide-react';
 import { ChatMessage, SwapProposal, User, EscrowTransaction } from '../types';
-import { lockEscrowPoints, releaseEscrowPoints, getEscrowForProposal } from '../utils/escrowManager';
+import { auth } from '../firebase';
+import { usePresence } from '../context/PresenceContext';
 
 interface ChatPortalProps {
   currentUser: User;
@@ -26,9 +28,10 @@ interface ChatPortalProps {
   messages: ChatMessage[];
   selectedProposalId: string | null;
   onSelectProposal: (proposalId: string) => void;
-  onSendMessage: (proposalId: string, text: string) => void;
+  onSendMessage: (proposalId: string, text: string) => Promise<boolean> | void;
   onStartCall: (proposalId: string, callType: 'video' | 'audio', peerName: string, peerAvatar: string, skillTitle: string) => void;
   showToast: (msg: string) => void;
+  onMarkMessageRead?: (messageId: string) => void;
 }
 
 export const ChatPortal: React.FC<ChatPortalProps> = ({
@@ -40,8 +43,11 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
   onSendMessage,
   onStartCall,
   showToast,
+  onMarkMessageRead,
 }) => {
+  const { isUserOnline, getUserPresenceLabel } = usePresence();
   const [inputText, setInputText] = useState<string>('');
+  const [isSending, setIsSending] = useState<boolean>(false);
   const [isRecordingAudioNote, setIsRecordingAudioNote] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
   const [escrowTx, setEscrowTx] = useState<EscrowTransaction | null>(null);
@@ -50,22 +56,41 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
   const currentProposal = proposals.find((p) => p.id === activeProposalId) || proposals[0];
   const currentMessages = messages.filter((m) => m.swapProposalId === activeProposalId);
 
+  // Automatically mark incoming unread messages for the active conversation as read
+  useEffect(() => {
+    if (!currentUser?.id || !onMarkMessageRead || !activeProposalId) return;
+    const unreadMessages = currentMessages.filter(
+      (m) =>
+        (m.recipientId === currentUser.id ||
+          (!m.recipientId && m.senderId !== currentUser.id) ||
+          (m.participantIds?.includes(currentUser.id) && m.senderId !== currentUser.id)) &&
+        !m.read
+    );
+    unreadMessages.forEach((m) => {
+      onMarkMessageRead(m.id);
+    });
+  }, [currentMessages, currentUser?.id, onMarkMessageRead, activeProposalId]);
+
   useEffect(() => {
     if (!currentProposal) return;
 
-    let tx = getEscrowForProposal(currentProposal.id);
-    if (!tx && currentProposal.status === 'accepted') {
-      tx = lockEscrowPoints(
-        currentProposal.id,
-        currentProposal.senderId,
-        currentProposal.senderName,
-        currentProposal.recipientId,
-        currentProposal.recipientName,
-        currentProposal.requestedSkillTitle,
-        1
-      );
+    if (currentProposal.status === 'accepted') {
+      setEscrowTx({
+        id: `escrow-${currentProposal.id}`,
+        proposalId: currentProposal.id,
+        sessionId: currentProposal.id,
+        learnerId: currentProposal.senderId,
+        learnerName: currentProposal.senderName,
+        mentorId: currentProposal.recipientId,
+        mentorName: currentProposal.recipientName,
+        skillTitle: currentProposal.requestedSkillTitle,
+        creditsAmount: currentProposal.timeCreditsAmount || 1,
+        status: 'LOCKED',
+        lockedAt: 'Active Escrow',
+      });
+    } else {
+      setEscrowTx(null);
     }
-    setEscrowTx(tx || null);
   }, [currentProposal?.id, currentProposal?.status]);
 
   if (!currentProposal) {
@@ -79,14 +104,26 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
   }
 
   const isRecipient = currentProposal.recipientId === currentUser.id;
+  const partnerId = isRecipient ? currentProposal.senderId : currentProposal.recipientId;
   const partnerName = isRecipient ? currentProposal.senderName : currentProposal.recipientName;
   const partnerAvatar = isRecipient ? currentProposal.senderAvatar : currentProposal.recipientAvatar;
+  const isPartnerOnline = isUserOnline(partnerId);
+  const partnerPresenceLabel = getUserPresenceLabel(partnerId);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeProposalId) return;
-    onSendMessage(activeProposalId, inputText);
-    setInputText('');
+    const text = inputText.trim();
+    if (!text || !activeProposalId || isSending) return;
+
+    setIsSending(true);
+    try {
+      const res = await onSendMessage(activeProposalId, text);
+      if (res !== false) {
+        setInputText('');
+      }
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleRecordVoiceNote = () => {
@@ -101,12 +138,27 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
     }
   };
 
-  const handleReleaseEscrow = () => {
+  const handleReleaseEscrow = async () => {
     if (!escrowTx) return;
-    const released = releaseEscrowPoints(escrowTx.id);
-    if (released) {
-      setEscrowTx(released);
-      showToast(`Escrow released! 1 Time Credit transferred to ${partnerName}.`);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/escrow/release', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ swapId: currentProposal.id }),
+      });
+      if (res.ok) {
+        setEscrowTx((prev) => prev ? { ...prev, status: 'RELEASED' } : null);
+        showToast(`Escrow released! Time Credits transferred to ${partnerName}.`);
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Release failed' }));
+        showToast(data.error || 'Failed to release escrow');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Error releasing escrow');
     }
   };
 
@@ -160,9 +212,26 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
         {/* Header Bar */}
         <div className="p-4 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3">
-            <img src={partnerAvatar} alt={partnerName} className="w-10 h-10 rounded-full object-cover border-2 border-indigo-500" />
+            <div className="relative">
+              <img src={partnerAvatar} alt={partnerName} className="w-10 h-10 rounded-full object-cover border-2 border-indigo-500" />
+              <span
+                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-slate-950 ${
+                  isPartnerOnline ? 'bg-emerald-400' : 'bg-slate-500'
+                }`}
+                title={partnerPresenceLabel}
+              />
+            </div>
             <div>
-              <h3 className="text-sm font-extrabold text-white">{partnerName}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-white">{partnerName}</h3>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                  isPartnerOnline 
+                    ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' 
+                    : 'bg-slate-800/80 border-slate-700 text-slate-400'
+                }`}>
+                  {partnerPresenceLabel}
+                </span>
+              </div>
               <p className="text-xs text-indigo-300 font-medium">
                 {currentProposal.requestedSkillTitle} ↔ {currentProposal.offeredSkillTitle}
               </p>
@@ -302,10 +371,20 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
 
           <button
             type="submit"
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-600/20 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+            disabled={isSending || !inputText.trim()}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-600/20 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
           >
-            <Send className="w-4 h-4" />
-            <span>Send</span>
+            {isSending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Sending...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>Send</span>
+              </>
+            )}
           </button>
         </form>
 

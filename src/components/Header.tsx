@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Sparkles, 
   Search, 
@@ -73,6 +73,17 @@ export const Header: React.FC<HeaderProps> = ({
   pendingProposalsCount,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean>(networkNotifier.isOnline);
+
+  const unreadMessagesCount = useMemo(() => {
+    if (!currentUser?.id || !messages) return 0;
+    return messages.filter(
+      (m) =>
+        (m.recipientId === currentUser.id ||
+          (!m.recipientId && m.senderId !== currentUser.id) ||
+          (m.participantIds?.includes(currentUser.id) && m.senderId !== currentUser.id)) &&
+        !m.read
+    ).length;
+  }, [messages, currentUser?.id]);
 
   useEffect(() => {
     return networkNotifier.subscribe((online) => {
@@ -410,7 +421,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('chat')}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors whitespace-nowrap relative ${
                 activeTab === 'chat'
                   ? 'bg-slate-800 text-indigo-400 font-semibold'
                   : 'hover:text-slate-200 hover:bg-slate-800/50'
@@ -418,6 +429,11 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <MessageSquare className="w-4 h-4" />
               <span>Messages</span>
+              {unreadMessagesCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 bg-indigo-600 text-white text-[10px] font-extrabold rounded-full animate-pulse shadow-sm">
+                  {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                </span>
+              )}
             </button>
 
             <button

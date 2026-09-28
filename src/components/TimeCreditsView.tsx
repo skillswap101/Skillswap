@@ -18,7 +18,7 @@ import {
   History
 } from 'lucide-react';
 import { User, EscrowTransaction } from '../types';
-import { getStoredEscrowTransactions, subscribeEscrowChanges } from '../utils/escrowManager';
+import { auth } from '../firebase';
 import { StripeTransaction } from './StripeCheckoutModal';
 
 interface TimeCreditsViewProps {
@@ -38,7 +38,7 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
   onOpenStripeCheckout,
   onOpenCheckout,
 }) => {
-  const [escrowTxs, setEscrowTxs] = useState<EscrowTransaction[]>(getStoredEscrowTransactions());
+  const [escrowTxs, setEscrowTxs] = useState<EscrowTransaction[]>([]);
   const [stripeTxs, setStripeTxs] = useState<StripeTransaction[]>(() => {
     try {
       const saved = localStorage.getItem('skillswap_stripe_transactions');
@@ -46,37 +46,42 @@ export const TimeCreditsView: React.FC<TimeCreditsViewProps> = ({
     } catch (e) {
       console.error('Failed to parse stripe transactions', e);
     }
-    return [
-      {
-        id: 'ch_3M89F20A',
-        packageName: 'Standard Bundle (Save $3)',
-        credits: 3,
-        amount: 12,
-        cardName: 'Alex Rivers',
-        cardLast4: '4242',
-        cardBrand: 'Visa',
-        status: 'succeeded',
-        date: '2026-08-01, 14:30:15',
-      },
-      {
-        id: 'ch_3M71K98B',
-        packageName: 'Single Session',
-        credits: 1,
-        amount: 5,
-        cardName: 'Alex Rivers',
-        cardLast4: '8812',
-        cardBrand: 'Mastercard',
-        status: 'succeeded',
-        date: '2026-07-20, 09:12:44',
-      },
-    ];
+    return [];
   });
 
   useEffect(() => {
-    return subscribeEscrowChanges((updated) => {
-      setEscrowTxs(updated);
-    });
-  }, []);
+    let active = true;
+    const fetchRealData = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch('/api/transactions', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok && active) {
+          const txs = await res.json();
+          if (Array.isArray(txs)) {
+            const mappedStripe: StripeTransaction[] = txs.map((t: any) => ({
+              id: t.id || t.gatewayRef,
+              packageName: `${t.credits || 1} Time Credit${(t.credits || 1) > 1 ? 's' : ''}`,
+              credits: t.credits || 1,
+              amount: t.amount || 0,
+              cardName: currentUser.name,
+              cardLast4: 'Verified',
+              cardBrand: (t.gateway || 'Stripe').toUpperCase(),
+              status: t.status === 'SUCCESS' ? 'succeeded' : 'processing',
+              date: t.createdAt || new Date().toISOString(),
+            }));
+            setStripeTxs(mappedStripe);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load transaction ledger:', err);
+      }
+    };
+    fetchRealData();
+    return () => { active = false; };
+  }, [currentUser.id, currentUser.timeCredits]);
 
   useEffect(() => {
     const handleStorage = () => {

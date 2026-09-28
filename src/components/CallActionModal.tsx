@@ -22,7 +22,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { webRTCManager } from '../utils/WebRTCManager';
-import { lockEscrowPoints, releaseEscrowPoints, disputeEscrowPoints, getEscrowForProposal } from '../utils/escrowManager';
+import { auth } from '../firebase';
 import { EscrowTransaction, User, SessionNote } from '../types';
 
 interface CallActionModalProps {
@@ -74,21 +74,22 @@ export const CallActionModal: React.FC<CallActionModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    // Check or ensure Escrow points are locked for this session
-    let tx = getEscrowForProposal(proposalId);
-    if (!tx) {
-      tx = lockEscrowPoints(
-        proposalId,
-        currentUser.id,
-        currentUser.name,
-        'usr_peer',
-        peerName,
-        skillTitle,
-        1
-      );
-    }
+    // Initialize session escrow state
+    const tx: EscrowTransaction = {
+      id: `escrow-${proposalId}`,
+      proposalId,
+      sessionId: proposalId,
+      learnerId: currentUser.id,
+      learnerName: currentUser.name,
+      mentorId: 'peer',
+      mentorName: peerName,
+      skillTitle,
+      creditsAmount: 1,
+      status: 'LOCKED',
+      lockedAt: 'Live Session Started',
+    };
     setEscrowTx(tx);
-    setIsEscrowReleased(tx.status === 'RELEASED');
+    setIsEscrowReleased(false);
 
     // Start WebRTC connection
     webRTCManager.startCall({
@@ -142,22 +143,52 @@ export const CallActionModal: React.FC<CallActionModalProps> = ({
     }
   };
 
-  const handleReleaseEscrow = () => {
+  const handleReleaseEscrow = async () => {
     if (!escrowTx) return;
-    const updated = releaseEscrowPoints(escrowTx.id);
-    if (updated) {
-      setEscrowTx(updated);
-      setIsEscrowReleased(true);
-      showToast(`Escrow released! 1 Time Credit transferred to ${peerName}.`);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/escrow/release', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ swapId: proposalId }),
+      });
+      if (res.ok) {
+        setEscrowTx((prev) => prev ? { ...prev, status: 'RELEASED' } : null);
+        setIsEscrowReleased(true);
+        showToast(`Escrow released! Time Credits transferred to ${peerName}.`);
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Release failed' }));
+        showToast(data.error || 'Failed to release escrow');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Error releasing escrow');
     }
   };
 
-  const handleDisputeEscrow = () => {
+  const handleDisputeEscrow = async () => {
     if (!escrowTx) return;
-    const updated = disputeEscrowPoints(escrowTx.id);
-    if (updated) {
-      setEscrowTx(updated);
-      showToast('Escrow marked under Dispute Protection. Support notified.');
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/escrow/dispute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ swapId: proposalId, reason: 'Session disputed during call' }),
+      });
+      if (res.ok) {
+        setEscrowTx((prev) => prev ? { ...prev, status: 'DISPUTED' } : null);
+        showToast('Escrow marked under Dispute Protection. Support notified.');
+      } else {
+        const data = await res.json().catch(() => ({ error: 'Dispute failed' }));
+        showToast(data.error || 'Failed to dispute escrow');
+      }
+    } catch (e: any) {
+      showToast(e.message || 'Error disputing escrow');
     }
   };
 

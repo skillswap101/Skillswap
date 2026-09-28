@@ -8,13 +8,6 @@ import {
 } from 'react';
 import { supabase, isSupabaseConfigured, setSupabaseAuthToken } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import {
-  INITIAL_SKILLS,
-  INITIAL_PROPOSALS,
-  INITIAL_SESSIONS,
-  INITIAL_MESSAGES,
-  INITIAL_REVIEWS,
-} from '../data/mockData';
 import type {
   User,
   Skill,
@@ -44,6 +37,7 @@ export interface CloudStateBridgeResult {
   setReviews: Dispatch<SetStateAction<Review[]>>;
 
   // Direct database mutation methods
+  updateUserProfileInCloud: (data: Partial<User>) => Promise<void>;
   addSkillToCloud: (skill: Skill) => Promise<void>;
   updateSkillInCloud: (skillId: string, data: Partial<Skill>) => Promise<void>;
   deleteSkillFromCloud: (skillId: string) => Promise<void>;
@@ -55,6 +49,7 @@ export interface CloudStateBridgeResult {
   updateSessionInCloud: (sessionId: string, data: Partial<Session>) => Promise<void>;
 
   addMessageToCloud: (message: ChatMessage) => Promise<void>;
+  markMessageReadInCloud: (messageId: string) => Promise<void>;
   addReviewToCloud: (review: Review) => Promise<void>;
 }
 
@@ -85,23 +80,23 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
   );
 
   const [skills, setSkillsState] = useState<Skill[]>(() =>
-    loadFromOfflineCache('skillswap_skills', INITIAL_SKILLS)
+    loadFromOfflineCache('skillswap_skills', [])
   );
 
   const [proposals, setProposalsState] = useState<SwapProposal[]>(() =>
-    loadFromOfflineCache('skillswap_proposals', INITIAL_PROPOSALS)
+    loadFromOfflineCache('skillswap_proposals', [])
   );
 
   const [sessions, setSessionsState] = useState<Session[]>(() =>
-    loadFromOfflineCache('skillswap_sessions', INITIAL_SESSIONS)
+    loadFromOfflineCache('skillswap_sessions', [])
   );
 
   const [messages, setMessagesState] = useState<ChatMessage[]>(() =>
-    loadFromOfflineCache('skillswap_messages', INITIAL_MESSAGES)
+    loadFromOfflineCache('skillswap_messages', [])
   );
 
   const [reviews, setReviewsState] = useState<Review[]>(() =>
-    loadFromOfflineCache('skillswap_reviews', INITIAL_REVIEWS)
+    loadFromOfflineCache('skillswap_reviews', [])
   );
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -167,8 +162,43 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
   }, [skills, proposals, sessions, messages, reviews]);
 
   // Direct mutation methods
+  const isCloudConfigured = useCallback(() => {
+    return typeof isSupabaseConfigured === 'function'
+      ? isSupabaseConfigured()
+      : Boolean(isSupabaseConfigured);
+  }, []);
+
+  const updateUserProfileInCloud = useCallback(async (data: Partial<User>) => {
+    const uid = requireAuthenticatedUser();
+    setCurrentUserState((prev) => (prev ? { ...prev, ...data } : null));
+
+    if (!isCloudConfigured()) return;
+
+    try {
+      const payload = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        raw_data: data,
+      };
+      const { error } = await supabase.from('users').update(payload).eq('id', uid);
+      if (error) throw new Error(error.message);
+    } catch (err: any) {
+      console.warn('[CloudBridge] Error updating user profile in Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
+      throw err;
+    }
+  }, [requireAuthenticatedUser, isCloudConfigured]);
+
   const addSkillToCloud = useCallback(async (skill: Skill) => {
-    const uid = firebaseUser?.uid || currentUser?.id || 'demo-user-1';
+    const uid = requireAuthenticatedUser();
+    const cleanSkill = { ...skill };
+    if (cleanSkill.previewVideoUrl && cleanSkill.previewVideoUrl.startsWith('blob:')) {
+      cleanSkill.previewVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+    }
+    setSkillsState((prev) => [cleanSkill, ...prev.filter((s) => s.id !== cleanSkill.id)]);
+
+    if (!isCloudConfigured()) return;
+
     try {
       // Ensure user exists in users table (foreign key constraint)
       const userPayload = {
@@ -182,31 +212,28 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       await supabase.from('users').upsert(userPayload);
 
-      const cleanSkill = { ...skill };
-      if (cleanSkill.previewVideoUrl && cleanSkill.previewVideoUrl.startsWith('blob:')) {
-        cleanSkill.previewVideoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
-      }
-
       const payload = {
         ...cleanSkill,
         userId: uid,
-        createdAt: new Date().toISOString(),
+        createdAt: cleanSkill.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         raw_data: cleanSkill,
       };
       const { error } = await supabase.from('skills').upsert(payload);
-      if (error) {
-        console.warn('[CloudBridge] Notice saving skill to Supabase:', error.message);
-      }
-      setSkillsState((prev) => [skill, ...prev.filter((s) => s.id !== skill.id)]);
+      if (error) throw new Error(error.message);
     } catch (err: any) {
-      console.error('[CloudBridge] Error writing skill to Supabase:', err);
-      setSkillsState((prev) => [skill, ...prev.filter((s) => s.id !== skill.id)]);
+      console.warn('[CloudBridge] Error writing skill to Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
+      throw err;
     }
-  }, [firebaseUser, currentUser]);
+  }, [requireAuthenticatedUser, currentUser, isCloudConfigured]);
 
   const updateSkillInCloud = useCallback(async (skillId: string, data: Partial<Skill>) => {
     requireAuthenticatedUser();
+    setSkillsState((prev) => prev.map((s) => (s.id === skillId ? { ...s, ...data } : s)));
+
+    if (!isCloudConfigured()) return;
+
     try {
       const payload = {
         ...data,
@@ -215,27 +242,35 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       const { error } = await supabase.from('skills').update(payload).eq('id', skillId);
       if (error) throw new Error(error.message);
-      setSkillsState((prev) => prev.map((s) => (s.id === skillId ? { ...s, ...data } : s)));
     } catch (err: any) {
-      console.error('[CloudBridge] Error updating skill in Supabase:', err);
+      console.warn('[CloudBridge] Error updating skill in Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const deleteSkillFromCloud = useCallback(async (skillId: string) => {
     requireAuthenticatedUser();
+    setSkillsState((prev) => prev.filter((s) => s.id !== skillId));
+
+    if (!isCloudConfigured()) return;
+
     try {
       const { error } = await supabase.from('skills').delete().eq('id', skillId);
       if (error) throw new Error(error.message);
-      setSkillsState((prev) => prev.filter((s) => s.id !== skillId));
     } catch (err: any) {
-      console.error('[CloudBridge] Error deleting skill from Supabase:', err);
+      console.warn('[CloudBridge] Error deleting skill from Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const addProposalToCloud = useCallback(async (proposal: SwapProposal) => {
     const uid = requireAuthenticatedUser();
+    setProposalsState((prev) => [proposal, ...prev.filter((p) => p.id !== proposal.id)]);
+
+    if (!isCloudConfigured()) return;
+
     try {
       const participantIds = Array.from(
         new Set([uid, proposal.recipientId, proposal.senderId].filter(Boolean))
@@ -249,35 +284,43 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       const { error } = await supabase.from('proposals').upsert(payload);
       if (error) throw new Error(error.message);
-      setProposalsState((prev) => [proposal, ...prev.filter((p) => p.id !== proposal.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error saving proposal to Supabase:', err);
+      console.warn('[CloudBridge] Error saving proposal to Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const updateProposalStatusInCloud = useCallback(async (
     proposalId: string,
     status: SwapProposal['status']
   ) => {
     requireAuthenticatedUser();
+    setProposalsState((prev) =>
+      prev.map((p) => (p.id === proposalId ? { ...p, status } : p))
+    );
+
+    if (!isCloudConfigured()) return;
+
     try {
       const { error } = await supabase
         .from('proposals')
         .update({ status, updatedAt: new Date().toISOString() })
         .eq('id', proposalId);
       if (error) throw new Error(error.message);
-      setProposalsState((prev) =>
-        prev.map((p) => (p.id === proposalId ? { ...p, status } : p))
-      );
     } catch (err: any) {
-      console.error('[CloudBridge] Error updating proposal status in Supabase:', err);
+      console.warn('[CloudBridge] Error updating proposal status in Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const addSessionToCloud = useCallback(async (session: Session) => {
     const uid = requireAuthenticatedUser();
+    setSessionsState((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
+
+    if (!isCloudConfigured()) return;
+
     try {
       const participantIds = Array.from(
         new Set([
@@ -297,15 +340,21 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       const { error } = await supabase.from('sessions').upsert(payload);
       if (error) throw new Error(error.message);
-      setSessionsState((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error saving session to Supabase:', err);
+      console.warn('[CloudBridge] Error saving session to Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const updateSessionInCloud = useCallback(async (sessionId: string, data: Partial<Session>) => {
     requireAuthenticatedUser();
+    setSessionsState((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s))
+    );
+
+    if (!isCloudConfigured()) return;
+
     try {
       const payload = {
         ...data,
@@ -314,17 +363,19 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       const { error } = await supabase.from('sessions').update(payload).eq('id', sessionId);
       if (error) throw new Error(error.message);
-      setSessionsState((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, ...data } : s))
-      );
     } catch (err: any) {
-      console.error('[CloudBridge] Error updating session in Supabase:', err);
+      console.warn('[CloudBridge] Error updating session in Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const addMessageToCloud = useCallback(async (message: ChatMessage) => {
     const uid = requireAuthenticatedUser();
+    setMessagesState((prev) => [...prev, { ...message, senderId: uid, read: false }]);
+
+    if (!isCloudConfigured()) return;
+
     try {
       const participantIds = Array.from(
         new Set([uid, message.senderId, message.recipientId, ...(message.participantIds || [])].filter(Boolean))
@@ -332,21 +383,46 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
 
       const payload = {
         ...message,
+        senderId: uid,
         participantIds,
-        createdAt: new Date().toISOString(),
+        read: message.read || false,
+        createdAt: message.createdAt || new Date().toISOString(),
         raw_data: message,
       };
       const { error } = await supabase.from('messages').insert(payload);
       if (error) throw new Error(error.message);
-      setMessagesState((prev) => [...prev, message]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error sending message to Supabase:', err);
+      console.warn('[CloudBridge] Error sending message to Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
+
+  const markMessageReadInCloud = useCallback(async (messageId: string) => {
+    requireAuthenticatedUser();
+    setMessagesState((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, read: true } : m))
+    );
+
+    if (!isCloudConfigured()) return;
+
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ read: true })
+        .eq('id', messageId);
+      if (error) throw new Error(error.message);
+    } catch (err: any) {
+      console.warn('[CloudBridge] Error marking message read in Supabase:', err?.message || err);
+    }
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   const addReviewToCloud = useCallback(async (review: Review) => {
     requireAuthenticatedUser();
+    setReviewsState((prev) => [review, ...prev.filter((r) => r.id !== review.id)]);
+
+    if (!isCloudConfigured()) return;
+
     try {
       const payload = {
         ...review,
@@ -355,16 +431,26 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       };
       const { error } = await supabase.from('reviews').insert(payload);
       if (error) throw new Error(error.message);
-      setReviewsState((prev) => [review, ...prev.filter((r) => r.id !== review.id)]);
     } catch (err: any) {
-      console.error('[CloudBridge] Error saving review to Supabase:', err);
+      console.warn('[CloudBridge] Error saving review to Supabase:', err?.message || err);
+      if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') return;
       throw err;
     }
-  }, [requireAuthenticatedUser]);
+  }, [requireAuthenticatedUser, isCloudConfigured]);
 
   // Supabase Real-time Subscriptions and Queries
   useEffect(() => {
     let disposed = false;
+
+    const configured =
+      typeof isSupabaseConfigured === 'function'
+        ? isSupabaseConfigured()
+        : Boolean(isSupabaseConfigured);
+
+    if (!configured) {
+      setLoading(false);
+      return;
+    }
 
     if (!firebaseUser) {
       uidRef.current = null;
@@ -418,52 +504,34 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
           setSkillsState(skillsRows.map((r) => cleanRow<Skill>(r)));
         }
 
-        // Fetch Proposals
+        // Fetch Proposals (Scoped to current authenticated user to prevent data leakage)
         const { data: proposalRows } = await supabase
           .from('proposals')
           .select('*')
+          .or(`senderId.eq.${uid},recipientId.eq.${uid},participantIds.cs.{"${uid}"}`)
           .order('createdAt', { ascending: false });
         if (!disposed && proposalRows) {
-          const userProposals = proposalRows
-            .filter((p: any) =>
-              p.senderId === uid ||
-              p.recipientId === uid ||
-              (Array.isArray(p.participantIds) && p.participantIds.includes(uid))
-            )
-            .map((r) => cleanRow<SwapProposal>(r));
-          if (userProposals.length > 0) setProposalsState(userProposals);
+          setProposalsState(proposalRows.map((r) => cleanRow<SwapProposal>(r)));
         }
 
-        // Fetch Sessions
+        // Fetch Sessions (Scoped to current authenticated user)
         const { data: sessionRows } = await supabase
           .from('sessions')
           .select('*')
+          .or(`mentorId.eq.${uid},learnerId.eq.${uid},participantIds.cs.{"${uid}"}`)
           .order('createdAt', { ascending: false });
         if (!disposed && sessionRows) {
-          const userSessions = sessionRows
-            .filter((s: any) =>
-              s.mentorId === uid ||
-              s.learnerId === uid ||
-              (Array.isArray(s.participantIds) && s.participantIds.includes(uid))
-            )
-            .map((r) => cleanRow<Session>(r));
-          if (userSessions.length > 0) setSessionsState(userSessions);
+          setSessionsState(sessionRows.map((r) => cleanRow<Session>(r)));
         }
 
-        // Fetch Messages
+        // Fetch Messages (Scoped to current authenticated user)
         const { data: messageRows } = await supabase
           .from('messages')
           .select('*')
+          .or(`senderId.eq.${uid},recipientId.eq.${uid},participantIds.cs.{"${uid}"}`)
           .order('createdAt', { ascending: true });
         if (!disposed && messageRows) {
-          const userMessages = messageRows
-            .filter((m: any) =>
-              m.senderId === uid ||
-              m.recipientId === uid ||
-              (Array.isArray(m.participantIds) && m.participantIds.includes(uid))
-            )
-            .map((r) => cleanRow<ChatMessage>(r));
-          if (userMessages.length > 0) setMessagesState(userMessages);
+          setMessagesState(messageRows.map((r) => cleanRow<ChatMessage>(r)));
         }
 
         // Fetch Reviews
@@ -611,6 +679,7 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     setSessions: setSessionsState,
     setMessages: setMessagesState,
     setReviews: setReviewsState,
+    updateUserProfileInCloud,
     addSkillToCloud,
     updateSkillInCloud,
     deleteSkillFromCloud,
@@ -619,6 +688,7 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     addSessionToCloud,
     updateSessionInCloud,
     addMessageToCloud,
+    markMessageReadInCloud,
     addReviewToCloud,
   };
 }

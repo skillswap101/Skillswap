@@ -17,102 +17,7 @@ import {
 } from 'lucide-react';
 import { User, Skill } from '../types';
 import { supabase } from '../lib/supabase';
-import { CURRENT_USER } from '../data/mockData';
-
-// Fallback seed community members with rich bios if database has few or no records
-const FALLBACK_COMMUNITY_MEMBERS: User[] = [
-  CURRENT_USER,
-  {
-    id: 'usr_1',
-    name: 'Elena Rostova',
-    title: 'Senior Frontend Architect & UI/UX Specialist',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-    bio: 'Passionate about design systems, accessible web development, and mentoring junior engineers. Over 7 years of production React and TypeScript experience. In exchange, I am eager to learn conversational Italian and portrait photography!',
-    location: 'Madrid, Spain (CET / Remote)',
-    rating: 5.0,
-    reviewCount: 32,
-    timeCredits: 14,
-    completedSessionsCount: 41,
-    skillsOffered: ['Advanced React & Next.js', 'Design Systems in Figma', 'Web Accessibility (a11y)'],
-    skillsDesired: ['Conversational Italian', 'Portrait Photography', 'Sound Design'],
-    badges: ['Top Mentor', 'Super Peer', 'Design Virtuoso']
-  },
-  {
-    id: 'usr_2',
-    name: 'Marcus Chen',
-    title: 'Full-Stack Engineer & Python Instructor',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-    bio: 'Backend specialist focused on Python, FastAPI, distributed caching, and cloud deployment. I believe the best way to master a concept is to teach it to others. Looking for native Japanese conversation practice or vocal singing coaching.',
-    location: 'Austin, TX (CST / Remote)',
-    rating: 4.8,
-    reviewCount: 24,
-    timeCredits: 8,
-    completedSessionsCount: 29,
-    skillsOffered: ['Python for Data Science', 'FastAPI & Microservices', 'PostgreSQL Optimization'],
-    skillsDesired: ['Conversational Japanese', 'Vocal Coaching', 'Baking Sourdough'],
-    badges: ['Code Wizard', 'Fast Responder']
-  },
-  {
-    id: 'usr_3',
-    name: 'Aria Takahashi',
-    title: 'Concert Pianist & Music Theory Teacher',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-    bio: 'Classical pianist and harmony educator. I teach ear training, chord substitutions, and classical piano technique for all levels. Seeking hands-on guidance with Blender 3D modeling and digital video editing.',
-    location: 'Tokyo, Japan (JST / Remote)',
-    rating: 5.0,
-    reviewCount: 19,
-    timeCredits: 11,
-    completedSessionsCount: 22,
-    skillsOffered: ['Classical Piano Essentials', 'Music Theory & Harmony', 'Ear Training'],
-    skillsDesired: ['Blender 3D Modeling', 'Video Editing with DaVinci', 'German Basics'],
-    badges: ['Virtuoso Mentor', 'Top Rated']
-  },
-  {
-    id: 'usr_4',
-    name: 'David Vance',
-    title: 'Certified Barista & Specialty Coffee Roaster',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
-    bio: 'Coffee roaster and barista championship judge. I love sharing the science of extraction, dialling in espresso, and latte art techniques. Excited to swap with anyone who can teach introductory chess or Spanish grammar.',
-    location: 'Seattle, WA (PST / Remote)',
-    rating: 4.9,
-    reviewCount: 15,
-    timeCredits: 6,
-    completedSessionsCount: 17,
-    skillsOffered: ['Espresso Dial-in & Extraction', 'Latte Art Mastery', 'Coffee Bean Roasting'],
-    skillsDesired: ['Chess Openings & Tactics', 'Conversational Spanish', 'Graphic Design'],
-    badges: ['Artisan', 'Community Builder']
-  },
-  {
-    id: 'usr_5',
-    name: 'Sophia Martinez',
-    title: 'Bilingual Translator & Spanish Language Coach',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
-    bio: 'Native Spanish speaker and certified language instructor. I specialize in rapid fluency, accent softening, and cultural nuances. I would love to learn intermediate Figma UI design or acoustic guitar fingerpicking!',
-    location: 'Buenos Aires, Argentina (ART / Remote)',
-    rating: 4.9,
-    reviewCount: 28,
-    timeCredits: 9,
-    completedSessionsCount: 35,
-    skillsOffered: ['Conversational Spanish Fluency', 'Business Spanish', 'Pronunciation & Accent'],
-    skillsDesired: ['Figma UI Design', 'Acoustic Guitar Fingerpicking', 'SEO Fundamentals'],
-    badges: ['Polyglot Coach', 'Top Mentor']
-  },
-  {
-    id: 'usr_6',
-    name: 'Liam Thorne',
-    title: 'Portrait Photographer & Adobe Lightroom Master',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80',
-    bio: 'Commercial and street photographer with over 8 years in the field. I teach composition, natural lighting, lens selection, and RAW color grading in Lightroom. Eager to swap for Webflow or React development basics.',
-    location: 'London, UK (GMT / Remote)',
-    rating: 4.7,
-    reviewCount: 14,
-    timeCredits: 5,
-    completedSessionsCount: 16,
-    skillsOffered: ['Portrait Photography & Lighting', 'Lightroom RAW Color Grading', 'Street Photography'],
-    skillsDesired: ['Webflow Development', 'React for Beginners', 'French Basics'],
-    badges: ['Visual Artist', 'Verified Mentor']
-  }
-];
+import { usePresence } from '../context/PresenceContext';
 
 interface UserDirectoryModalProps {
   isOpen: boolean;
@@ -133,12 +38,13 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
   onStartChatWithUser,
   showToast,
 }) => {
-  const [users, setUsers] = useState<User[]>(FALLBACK_COMMUNITY_MEMBERS);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterTag, setFilterTag] = useState<string>('all');
+  const { isUserOnline, getUserPresenceLabel } = usePresence();
 
-  // Fetch users from Supabase
+  // Fetch users from Supabase or derive from active community skills
   const fetchUsers = async () => {
     setLoading(true);
     try {
@@ -148,11 +54,10 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
         .order('name', { ascending: true });
 
       if (error) {
-        console.warn('[UserDirectory] Supabase fetch error, using merged community data:', error.message);
+        console.warn('[UserDirectory] Supabase fetch notice:', error.message);
       }
 
       if (data && data.length > 0) {
-        // Map database records to User objects
         const dbUsers: User[] = data.map((row: any) => ({
           id: row.id,
           name: row.name || 'Anonymous Member',
@@ -169,25 +74,35 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
           skillsDesired: Array.isArray(row.skillsDesired) ? row.skillsDesired : (row.raw_data?.skillsDesired || []),
           badges: Array.isArray(row.badges) ? row.badges : (row.raw_data?.badges || ['Community Member']),
         }));
-
-        // Merge DB users with fallback users (prevent duplicates by ID or name)
-        const existingIds = new Set(dbUsers.map(u => u.id.toLowerCase()));
-        const existingNames = new Set(dbUsers.map(u => u.name.toLowerCase()));
-        
-        const merged = [
-          ...dbUsers,
-          ...FALLBACK_COMMUNITY_MEMBERS.filter(
-            f => !existingIds.has(f.id.toLowerCase()) && !existingNames.has(f.name.toLowerCase())
-          )
-        ];
-
-        setUsers(merged);
+        setUsers(dbUsers);
       } else {
-        setUsers(FALLBACK_COMMUNITY_MEMBERS);
+        // Derive community users from current marketplace skills if users table is empty
+        const skillUsersMap = new Map<string, User>();
+        for (const s of skills) {
+          if (s.userId && !skillUsersMap.has(s.userId)) {
+            skillUsersMap.set(s.userId, {
+              id: s.userId,
+              name: s.userName || 'Community Member',
+              email: `${s.userId}@skillswap.local`,
+              title: `${s.title} Mentor`,
+              avatar: s.userAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${s.userId}`,
+              bio: s.description || 'Active peer teacher on SkillSwap.',
+              location: s.userLocation || 'Global Remote',
+              rating: s.userRating || 5.0,
+              reviewCount: s.userReviewCount || 0,
+              timeCredits: 5,
+              completedSessionsCount: 0,
+              skillsOffered: [s.title],
+              skillsDesired: [],
+              badges: ['Skill Creator'],
+            });
+          }
+        }
+        setUsers(Array.from(skillUsersMap.values()));
       }
     } catch (err: any) {
-      console.warn('[UserDirectory] Could not fetch remote users, keeping local list:', err);
-      setUsers(FALLBACK_COMMUNITY_MEMBERS);
+      console.warn('[UserDirectory] Notice loading users:', err);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -312,14 +227,22 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
                     <div className="space-y-3">
                       {/* Member Header: Avatar, Name, Title, Location */}
                       <div className="flex items-start gap-3">
-                        <img
-                          src={member.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${member.id}`}
-                          alt={member.name}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/bottts/svg?seed=${member.name}`;
-                          }}
-                          className="w-12 h-12 rounded-xl object-cover ring-2 ring-indigo-500/20 flex-shrink-0"
-                        />
+                        <div className="relative flex-shrink-0">
+                          <img
+                            src={member.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${member.id}`}
+                            alt={member.name}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/bottts/svg?seed=${member.name}`;
+                            }}
+                            className="w-12 h-12 rounded-xl object-cover ring-2 ring-indigo-500/20"
+                          />
+                          <span
+                            className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-slate-800 ${
+                              isUserOnline(member.id) ? 'bg-emerald-400' : 'bg-slate-500'
+                            }`}
+                            title={getUserPresenceLabel(member.id)}
+                          />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <h3 className="font-bold text-slate-100 text-sm truncate">
@@ -327,6 +250,13 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
                             </h3>
                             <span title="Verified Member">
                               <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                            </span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
+                              isUserOnline(member.id) 
+                                ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' 
+                                : 'bg-slate-900 border-slate-700 text-slate-400'
+                            }`}>
+                              {getUserPresenceLabel(member.id)}
                             </span>
                           </div>
                           

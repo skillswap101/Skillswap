@@ -163,6 +163,8 @@ export interface ChatMessage {
   isSystem?: boolean;
   recipientId?: string;
   participantIds?: string[];
+  read?: boolean;
+  createdAt?: string;
 }
 
 export interface SkillRequest {

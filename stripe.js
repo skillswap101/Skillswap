@@ -2,7 +2,7 @@ import express from 'express';
 import Stripe from 'stripe';
 import { authenticateUser } from './middleware/auth.js';
 import { getPackageById } from './server/packageCatalog.js';
-import { createPendingPayment, fulfillPendingPayment } from './server/services/paymentsService.js';
+import { createPendingPayment, fulfillPendingPayment, getPendingPaymentStatus } from './server/services/paymentsService.js';
 import { supabase } from './server/supabaseClient.js';
 
 const router = express.Router();
@@ -94,7 +94,15 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
 
       return res.status(200).json({ success: true, url: session.url, sessionId: session.id, isSandbox: false });
     } else {
-      // Sandbox fallback mode when live Stripe credentials are not yet configured in environment
+      // If Stripe is unconfigured in production, fail closed
+      if (process.env.NODE_ENV === 'production' || process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
+        return res.status(503).json({
+          success: false,
+          error: 'Stripe gateway is currently unconfigured. Set STRIPE_SECRET_KEY in server environment to enable card payments.'
+        });
+      }
+
+      // Development-only testing mode (only when ALLOW_PAYMENT_SIMULATORS=true is explicitly set)
       const simSessionId = `cs_sim_${Date.now()}`;
       await createPendingPayment({
         gateway: 'stripe',
@@ -105,16 +113,13 @@ router.post('/api/v1/stripe/create-checkout-session', authenticateUser, express.
         currency: 'USD',
       });
 
-      // Instantly fulfill in sandbox mode
-      await fulfillPendingPayment('stripe', simSessionId, `STRIPE_SIM_${Date.now()}`);
-
       return res.status(200).json({
         success: true,
         url: `${frontendUrl}/?stripe_success=true&credits=${pkg.hours}&sandbox=true`,
         sessionId: simSessionId,
         sandbox: true,
-        creditsAdded: pkg.hours,
-        message: 'Stripe payment completed in Sandbox/Demo mode.',
+        creditsAdded: 0,
+        message: 'Stripe sandbox session initiated (credits are fulfilled only on valid webhook).',
       });
     }
   } catch (error) {
@@ -179,11 +184,17 @@ router.post('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }),
       }
 
       const credited = await fulfillPendingPayment('stripe', session.id, session.payment_intent);
-      console.log(
-        credited
-          ? `[stripe] Fulfilled session ${session.id}`
-          : `[stripe] Session ${session.id} already fulfilled or no matching pending payment`
-      );
+      if (credited) {
+        console.log(`[stripe] Fulfilled session ${session.id} atomically`);
+      } else {
+        const currentStatus = await getPendingPaymentStatus('stripe', session.id);
+        if (currentStatus === 'completed') {
+          console.log(`[stripe] Session ${session.id} was already completed; duplicate event safely acknowledged.`);
+        } else {
+          console.error(`[stripe] Atomic fulfillment failed for session ${session.id}. Retrying webhook.`);
+          return res.status(500).json({ error: 'Atomic fulfillment failed, retrying webhook' });
+        }
+      }
 
       await supabase.from('stripe_events').insert({
         id: event.id,

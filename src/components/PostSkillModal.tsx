@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { X, PlusCircle, Sparkles, Check, Image as ImageIcon, Video, Upload, Film } from 'lucide-react';
+import { X, PlusCircle, Sparkles, Check, Image as ImageIcon, Video, Upload, Film, Loader2 } from 'lucide-react';
 import { Skill, SkillCategory, DeliveryMode, SkillLevel, SwapType, User } from '../types';
 
 interface PostSkillModalProps {
   currentUser: User;
   onClose: () => void;
-  onAddSkill: (newSkill: Skill) => void;
+  onAddSkill: (newSkill: Skill) => Promise<boolean> | void;
 }
 
 const PRESET_IMAGES = [
@@ -32,6 +32,7 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
   const [previewVideoUrl, setPreviewVideoUrl] = useState('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
   const [uploadedVideoName, setUploadedVideoName] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleVideoFile = (file: File) => {
     if (!file) return;
@@ -54,42 +55,51 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    if (!title.trim() || !description.trim() || isSubmitting) return;
 
-    const desiredList = skillsDesiredInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    setIsSubmitting(true);
+    try {
+      const desiredList = skillsDesiredInput
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-    const newSkillObj: Skill = {
-      id: `sk_${Date.now()}`,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      userAvatar: currentUser.avatar,
-      userRating: 5.0,
-      userReviewCount: 1,
-      userLocation: currentUser.location,
-      category,
-      title,
-      description,
-      level,
-      delivery,
-      swapType,
-      skillsDesiredInReturn: desiredList.length > 0 ? desiredList : ['Conversational Spanish', 'Photography'],
-      tags: [category, level, delivery],
-      image: selectedImage,
-      previewVideoUrl: previewVideoUrl.trim() || undefined,
-      featured: true,
-      verified: true,
-      hoursOffered: 10,
-      availability: ['Flexible Hours', 'Weekends'],
-      learningObjectives: ['Master fundamental principles', 'Hands-on project work'],
-    };
+      const newSkillObj: Skill = {
+        id: `sk_${Date.now()}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userAvatar: currentUser.avatar,
+        userRating: 5.0,
+        userReviewCount: 1,
+        userLocation: currentUser.location,
+        category,
+        title: title.trim(),
+        description: description.trim(),
+        level,
+        delivery,
+        swapType,
+        skillsDesiredInReturn: desiredList.length > 0 ? desiredList : ['Conversational Spanish', 'Photography'],
+        tags: [category, level, delivery],
+        image: selectedImage,
+        previewVideoUrl: previewVideoUrl.trim() || undefined,
+        featured: true,
+        verified: true,
+        hoursOffered: 10,
+        availability: ['Flexible Hours', 'Weekends'],
+        learningObjectives: ['Master fundamental principles', 'Hands-on project work'],
+      };
 
-    onAddSkill(newSkillObj);
-    onClose();
+      const res = await onAddSkill(newSkillObj);
+      if (res !== false) {
+        onClose();
+      }
+    } catch (err) {
+      console.error('[PostSkillModal] Error submitting skill:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -336,9 +346,17 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer"
             >
-              Publish Skill Listing
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Publishing...</span>
+                </>
+              ) : (
+                <span>Publish Skill Listing</span>
+              )}
             </button>
           </div>
         </form>

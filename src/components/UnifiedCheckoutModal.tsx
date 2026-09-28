@@ -149,7 +149,8 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
       }
     } catch (err: any) {
       setProcessing(false);
-      setErrorMessage(err.message || 'Stripe payment failed. Please check details and retry.');
+      setErrorMessage(err.message || 'Payment not successful. Please check details and retry.');
+      showToast('Payment not successful');
     }
   };
 
@@ -162,10 +163,11 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
       setProcessing(false);
       setStkPending(true);
       setStkRequestId(res.checkoutRequestId);
-      showToast('STK Prompt sent! Please check your phone.');
+      showToast('Payment pending — waiting for confirmation.');
     } catch (err: any) {
       setProcessing(false);
-      setErrorMessage(err.message || 'Failed to initiate M-Pesa STK push.');
+      setErrorMessage(err.message || 'Payment not successful.');
+      showToast('Payment not successful');
     }
   };
 
@@ -191,16 +193,18 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
             amount: `KES ${selectedPkg.priceKES.toLocaleString()}`,
           });
           triggerConfetti();
-          showToast(`M-Pesa payment confirmed! Added +${selectedPkg.hours} credits.`);
+          showToast('Payment successful');
           onSuccess(selectedPkg.hours);
         } else if (status === 'failed') {
           clearInterval(interval);
           setStkPending(false);
-          setErrorMessage('M-Pesa payment cancelled or rejected on handset.');
+          setErrorMessage('Payment not successful. Transaction cancelled or rejected.');
+          showToast('Payment not successful');
         } else if (attempts > 25) {
           clearInterval(interval);
           setStkPending(false);
-          setErrorMessage('M-Pesa request timed out. If you entered your PIN, credits will update shortly.');
+          setErrorMessage('Payment pending — waiting for confirmation. If you entered your PIN, credits will update shortly.');
+          showToast('Payment pending — waiting for confirmation.');
         }
       } catch {
         // network retry
@@ -227,11 +231,12 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
         amount: `KES ${selectedPkg.priceKES.toLocaleString()}`,
       });
       triggerConfetti();
-      showToast(`M-Pesa PIN confirmed! Added +${selectedPkg.hours} credits.`);
+      showToast('Payment successful');
       onSuccess(selectedPkg.hours);
     } catch (e: any) {
       setProcessing(false);
-      setErrorMessage(e.message || 'Could not confirm M-Pesa PIN');
+      setErrorMessage(e.message || 'Payment not successful');
+      showToast('Payment not successful');
     }
   };
 
@@ -252,16 +257,18 @@ export const UnifiedCheckoutModal: React.FC<UnifiedCheckoutModalProps> = ({
           amount: `$${selectedPkg.priceUSD.toFixed(2)} USD`,
         });
         triggerConfetti();
-        showToast(`PayPal payment approved! Added +${selectedPkg.hours} credits.`);
+        showToast('Payment successful');
         onSuccess(selectedPkg.hours);
       } else if (order.approveUrl) {
+        showToast('Payment pending — waiting for confirmation.');
         window.location.href = order.approveUrl;
       } else {
         throw new Error('PayPal did not return an approval link');
       }
     } catch (err: any) {
       setProcessing(false);
-      setErrorMessage(err.message || 'PayPal checkout failed. Please retry.');
+      setErrorMessage(err.message || 'Payment not successful. Please retry.');
+      showToast('Payment not successful');
     }
   };
 

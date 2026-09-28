@@ -1,36 +1,49 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const rawSupabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ||
+  import.meta.env.SUPABASE_URL ||
+  '';
 
-export const isSupabaseConfigured = Boolean(
-  supabaseUrl &&
-  supabaseAnonKey &&
-  !supabaseUrl.includes('YOUR_') &&
-  !supabaseAnonKey.includes('YOUR_')
-);
+const rawSupabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.SUPABASE_ANON_KEY ||
+  '';
+
+export function isSupabaseConfigured(): boolean {
+  return Boolean(
+    rawSupabaseUrl &&
+    rawSupabaseAnonKey &&
+    !rawSupabaseUrl.includes('placeholder') &&
+    !rawSupabaseUrl.includes('YOUR_') &&
+    !rawSupabaseAnonKey.includes('YOUR_')
+  );
+}
 
 const missingConfigurationError = new Error(
   'Supabase client configuration is missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
 );
 
-// Preserve the client API without manufacturing credentials when configuration is absent.
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+// Preserve client API without manufacturing mock JWT credentials
+export const supabase = isSupabaseConfigured()
+  ? createClient(rawSupabaseUrl, rawSupabaseAnonKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
       },
     })
-  : new Proxy({} as SupabaseClient, {
+  : (new Proxy({} as SupabaseClient, {
       get() {
         throw missingConfigurationError;
       },
-    });
+    }));
 
+/**
+ * Attaches the Firebase JWT token to the client's Authorization header
+ * so Supabase RLS can evaluate auth.uid() if Third-Party JWT is enabled in Supabase Dashboard.
+ */
 export function setSupabaseAuthToken(token: string | null) {
-  if (!isSupabaseConfigured) return;
-
+  if (!isSupabaseConfigured()) return;
   try {
     const headers = (supabase as any)?.rest?.headers;
     if (!headers) return;
@@ -39,8 +52,8 @@ export function setSupabaseAuthToken(token: string | null) {
     } else {
       delete headers.Authorization;
     }
-  } catch (error) {
-    console.warn('[Supabase] Failed to update auth header:', error);
+  } catch (e) {
+    console.warn('[Supabase] Failed to update auth header:', e);
   }
 }
 

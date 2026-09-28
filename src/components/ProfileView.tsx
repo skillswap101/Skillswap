@@ -18,17 +18,20 @@ import {
   Globe,
   Languages,
   Eye,
-  Check
+  Check,
+  Loader2
 } from 'lucide-react';
 import { User, Skill, Review } from '../types';
 import { LearningAnalytics } from './LearningAnalytics';
 import { GamificationBadges } from './GamificationBadges';
 import { PeerRatingsChart } from './PeerRatingsChart';
 import { SkillCertificationsSection } from './SkillCertificationsSection';
+import { uploadAvatar } from '../services/storageService';
+import { usePresence } from '../context/PresenceContext';
 
 interface ProfileViewProps {
   currentUser: User;
-  onUpdateUser: (updated: User) => void;
+  onUpdateUser: (updated: User, options?: { silent?: boolean }) => void | Promise<any>;
   userSkills: Skill[];
   reviews: Review[];
   onOpenPostSkill: () => void;
@@ -43,7 +46,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenPostSkill,
   showToast = (msg) => console.log(msg),
 }) => {
+  const { isUserOnline, getUserPresenceLabel } = usePresence();
   const [isEditingBio, setIsEditingBio] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [bioInput, setBioInput] = useState(currentUser.bio || '');
   const [titleInput, setTitleInput] = useState(currentUser.title || '');
   const [newDesiredInput, setNewDesiredInput] = useState('');
@@ -63,20 +68,42 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [newLangName, setNewLangName] = useState('');
   const [newLangFluency, setNewLangFluency] = useState<'Native' | 'Fluent' | 'Conversational' | 'Learning'>('Fluent');
 
-  const handleSaveBio = () => {
-    onUpdateUser({ 
-      ...currentUser, 
-      bio: bioInput,
-      title: titleInput || currentUser.title,
-      languages: languagesList,
-      socialLinks: {
-        github: socialGithub.trim() || undefined,
-        linkedin: socialLinkedin.trim() || undefined,
-        website: socialWebsite.trim() || undefined
-      }
-    });
-    setIsEditingBio(false);
-    showToast('✨ Profile bio and credentials saved successfully!');
+  const handleSaveBio = async () => {
+    try {
+      await onUpdateUser({ 
+        ...currentUser, 
+        bio: bioInput,
+        title: titleInput || currentUser.title,
+        languages: languagesList,
+        socialLinks: {
+          github: socialGithub.trim() || undefined,
+          linkedin: socialLinkedin.trim() || undefined,
+          website: socialWebsite.trim() || undefined
+        }
+      });
+      setIsEditingBio(false);
+    } catch {
+      // Error toast handled by onUpdateUser
+    }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const result = await uploadAvatar(file, currentUser.id);
+      await onUpdateUser({ ...currentUser, avatar: result.publicUrl }, { silent: true });
+      showToast('Profile picture uploaded successfully');
+    } catch (err: any) {
+      console.error('[ProfileView] Avatar upload error:', err);
+      showToast('Profile picture upload failed. Please try again.');
+    } finally {
+      setIsUploadingAvatar(false);
+      // Reset input value
+      e.target.value = '';
+    }
   };
 
   const handleAIPolishBio = () => {
@@ -136,27 +163,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 className="w-20 h-20 rounded-full object-cover border-4 border-indigo-500/50 shadow-xl group-hover:opacity-80 transition-opacity"
               />
               <label className="absolute inset-0 flex items-center justify-center bg-slate-950/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                <Camera className="w-6 h-6 text-indigo-300" />
+                {isUploadingAvatar ? (
+                  <Loader2 className="w-6 h-6 text-indigo-300 animate-spin" />
+                ) : (
+                  <Camera className="w-6 h-6 text-indigo-300" />
+                )}
                 <input
                   type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onloadend = () => {
-                        if (typeof reader.result === 'string') {
-                          onUpdateUser({ ...currentUser, avatar: reader.result });
-                          showToast('Profile picture updated successfully!');
-                        }
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  disabled={isUploadingAvatar}
+                  onChange={handleAvatarChange}
                   className="hidden"
                 />
               </label>
-              <span className="absolute bottom-0 right-0 w-5 h-5 bg-emerald-500 rounded-full border-2 border-slate-900 shadow-sm" title="Online" />
+              <span 
+                className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-2 border-slate-900 shadow-sm ${
+                  isUserOnline(currentUser.id) ? 'bg-emerald-500' : 'bg-slate-500'
+                }`} 
+                title={getUserPresenceLabel(currentUser.id)} 
+              />
             </div>
 
             <div className="space-y-1">

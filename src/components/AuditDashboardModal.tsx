@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { AuditCheckResult } from '../types';
+import HealthStatus from './HealthStatus';
 
 interface AuditDashboardModalProps {
   isOpen: boolean;
@@ -103,6 +104,16 @@ export const AuditDashboardModal: React.FC<AuditDashboardModalProps> = ({ isOpen
         {/* Audit Body */}
         <div className="p-6 overflow-y-auto space-y-6">
           
+          {/* Real-time Health Ping Status */}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Zap className="w-3.5 h-3.5 text-teal-400" />
+              <span className="font-semibold text-slate-200">Live Services Health Ping</span>
+              <span className="text-[10px] text-slate-500 font-mono">(every 10s)</span>
+            </div>
+            <HealthStatus />
+          </div>
+
           {/* Top Score Banner */}
           {auditData && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

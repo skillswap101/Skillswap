@@ -130,6 +130,7 @@ create table if not exists public.messages (
   message text,
   timestamp text,
   "isSystem" boolean default false,
+  "read" boolean default false,
   "createdAt" text,
   raw_data jsonb default '{}'::jsonb
 );
@@ -248,33 +249,26 @@ alter table public.notifications enable row level security;
 alter table public."webrtcRooms" enable row level security;
 
 -- Client-side Policies (service_role bypasses RLS automatically)
+-- Public read for users directory & skills marketplace
 drop policy if exists "Allow read users" on public.users;
 create policy "Allow read users" on public.users for select using (true);
-drop policy if exists "Allow upsert users" on public.users;
-create policy "Allow upsert users" on public.users for all using (true) with check (true);
 
 drop policy if exists "Allow read skills" on public.skills;
 create policy "Allow read skills" on public.skills for select using (true);
-drop policy if exists "Allow manage skills" on public.skills;
-create policy "Allow manage skills" on public.skills for all using (true) with check (true);
 
-drop policy if exists "Allow manage proposals" on public.proposals;
-create policy "Allow manage proposals" on public.proposals for all using (true) with check (true);
+-- Financial tables: NO direct client insert/update/delete. Only service_role can mutate.
+drop policy if exists "Deny client write transactions" on public.transactions;
+drop policy if exists "Deny client write escrow" on public."escrowTransactions";
+drop policy if exists "Deny client write pending_payments" on public."pendingPayments";
 
-drop policy if exists "Allow manage sessions" on public.sessions;
-create policy "Allow manage sessions" on public.sessions for all using (true) with check (true);
+-- Users can read their own financial transactions
+drop policy if exists "Allow select own transactions" on public.transactions;
+create policy "Allow select own transactions" on public.transactions for select 
+  using (auth.uid()::text = "userId");
 
-drop policy if exists "Allow manage messages" on public.messages;
-create policy "Allow manage messages" on public.messages for all using (true) with check (true);
-
-drop policy if exists "Allow manage reviews" on public.reviews;
-create policy "Allow manage reviews" on public.reviews for all using (true) with check (true);
-
-drop policy if exists "Allow manage notifications" on public.notifications;
-create policy "Allow manage notifications" on public.notifications for all using (true) with check (true);
-
-drop policy if exists "Allow manage webrtc" on public."webrtcRooms";
-create policy "Allow manage webrtc" on public."webrtcRooms" for all using (true) with check (true);
+drop policy if exists "Allow select own escrow" on public."escrowTransactions";
+create policy "Allow select own escrow" on public."escrowTransactions" for select 
+  using (auth.uid()::text = "learnerId" or auth.uid()::text = "mentorId");
 
 -- Enable Replica Identity for full realtime payloads on updates & deletes
 alter table public.users replica identity full;
@@ -284,11 +278,6 @@ alter table public.sessions replica identity full;
 alter table public.messages replica identity full;
 alter table public.reviews replica identity full;
 alter table public.notifications replica identity full;
-
--- Compatibility Views (allows both camelCase and snake_case queries)
-create or replace view public.escrow_transactions as select * from public."escrowTransactions";
-create or replace view public.pending_payments as select * from public."pendingPayments";
-create or replace view public.webrtc_rooms as select * from public."webrtcRooms";
 
 -- Enable Supabase Realtime Publication safely (idempotent, won't error if publication already exists)
 do $$
@@ -308,4 +297,91 @@ begin
     end if;
   end loop;
 end $$;
+
+-- 13. Atomic Payment Fulfillment RPC Function
+create or replace function public.fulfill_pending_payment(
+  p_payment_id text, 
+  p_gateway_receipt text default null
+) 
+returns boolean 
+language plpgsql 
+security definer 
+set search_path = public 
+as $$ 
+declare 
+  payment_row public."pendingPayments"%rowtype; 
+  user_row public.users%rowtype; 
+  new_balance numeric; 
+begin 
+  select * into payment_row from public."pendingPayments" where id = p_payment_id for update;
+  
+  if not found then 
+    return false; 
+  end if;
+  
+  if payment_row.status <> 'pending' then 
+    return false; 
+  end if;
+  
+  select * into user_row from public.users where id = payment_row."userId" for update;
+  
+  if not found then 
+    raise exception 'User % not found', payment_row."userId"; 
+  end if;
+  
+  new_balance := coalesce(user_row."timeCredits", 0) + coalesce(payment_row."creditHours", 0);
+  
+  update public.users 
+  set "timeCredits" = new_balance, "updatedAt" = now()::text 
+  where id = payment_row."userId";
+  
+  update public."pendingPayments" 
+  set status = 'completed', "gatewayReceipt" = p_gateway_receipt, "completedAt" = now()::text 
+  where id = payment_row.id;
+  
+  -- Strengthen transaction ledger idempotency: tie id to payment_row.id
+  insert into public.transactions (
+    id, "userId", gateway, "gatewayRef", amount, credits, currency, status, "createdAt"
+  ) values ( 
+    payment_row.id, payment_row."userId", payment_row.gateway, payment_row."gatewayRef", 
+    payment_row.amount, payment_row."creditHours", payment_row.currency, 'SUCCESS', now()::text 
+  ) on conflict (id) do nothing;
+  
+  return true; 
+end;
+$$;
+
+-- Idempotency & Financial Uniqueness Constraints
+create unique index if not exists idx_transactions_payment_id on public.transactions(id);
+create unique index if not exists idx_transactions_gateway_ref on public.transactions(gateway, "gatewayRef");
+create unique index if not exists idx_pending_payments_gateway_ref on public."pendingPayments"(gateway, "gatewayRef");
+
+-- Restrict RPC execution strictly to the backend service role
+revoke all on function public.fulfill_pending_payment(text, text) from public, anon, authenticated;
+grant execute on function public.fulfill_pending_payment(text, text) to service_role;
+
+-- ============================================================================
+-- Render Keep-Awake Cron (pg_cron + pg_net)
+-- Prevents Render free-tier cold starts (spins down after 15 mins of inactivity)
+-- ============================================================================
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+do $$
+begin
+  if exists (select 1 from cron.job where jobname = 'keep-render-awake') then
+    perform cron.unschedule('keep-render-awake');
+  end if;
+exception
+  when others then
+    null;
+end $$;
+
+select cron.schedule(
+  'keep-render-awake',
+  '*/12 * * * *',
+  $$ select net.http_get('https://skillswap-0919.onrender.com/api/health') $$
+);
+
+
 

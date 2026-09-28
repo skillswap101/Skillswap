@@ -4,7 +4,7 @@ const fetch = globalThis.fetch;
 import dotenv from 'dotenv';
 import { authenticateUser } from './middleware/auth.js';
 import { getPackageById } from './server/packageCatalog.js';
-import { createPendingPayment, fulfillPendingPayment, getPendingPayment } from './server/services/paymentsService.js';
+import { createPendingPayment, fulfillPendingPayment, getPendingPayment, getPendingPaymentStatus } from './server/services/paymentsService.js';
 
 dotenv.config();
 const router = express.Router();
@@ -65,6 +65,13 @@ router.post('/api/v1/paypal/create-order', authenticateUser, express.json(), asy
         const frontendUrl = getFrontendUrl(req);
 
         if (!isPaypalConfigured()) {
+            if (process.env.NODE_ENV === 'production' || process.env.ALLOW_PAYMENT_SIMULATORS !== 'true') {
+                return res.status(503).json({
+                    success: false,
+                    error: 'PayPal gateway is currently unconfigured. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET in server environment.',
+                });
+            }
+
             console.log('[PayPal] Running in Sandbox / Simulator mode (PayPal credentials not configured)');
             const simOrderId = `PP_SIM_${Date.now()}`;
             await createPendingPayment({
@@ -210,7 +217,23 @@ router.post('/api/v1/paypal/capture-order', authenticateUser, express.json(), as
         }
 
         const credited = await fulfillPendingPayment('paypal', orderID, capture?.id);
-        res.json({ success: true, captureId: capture?.id, credited, creditsAdded: pending.creditHours });
+        if (!credited) {
+            const currentStatus = await getPendingPaymentStatus('paypal', orderID);
+            if (currentStatus === 'completed') {
+                return res.json({
+                    success: true,
+                    captureId: capture?.id,
+                    credited: true,
+                    creditsAdded: pending.creditHours,
+                    alreadyFulfilled: true
+                });
+            }
+            return res.status(500).json({
+                success: false,
+                error: 'Payment was captured by PayPal, but atomic credit assignment failed. Please contact support with capture ID ' + capture?.id
+            });
+        }
+        res.json({ success: true, captureId: capture?.id, credited: true, creditsAdded: pending.creditHours });
     } catch (err) {
         console.error('PayPal Capture Error:', err);
         res.status(500).json({ success: false, error: 'Could not capture PayPal order' });

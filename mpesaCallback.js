@@ -1,6 +1,6 @@
 // M-Pesa Daraja STK Push callback (webhook) handler.
 import express from 'express';
-import { fulfillPendingPayment, markPendingPaymentFailed } from './server/services/paymentsService.js';
+import { fulfillPendingPayment, markPendingPaymentFailed, getPendingPaymentStatus } from './server/services/paymentsService.js';
 import { querySTKPushStatus } from './mpesa.js';
 
 const router = express.Router();
@@ -43,11 +43,16 @@ router.post('/api/v1/mpesa/callback', async (req, res) => {
             const mpesaReceiptNumber = items.find(i => i.Name === 'MpesaReceiptNumber')?.Value;
 
             const credited = await fulfillPendingPayment('mpesa', CheckoutRequestID, mpesaReceiptNumber);
-            console.log(
-                credited
-                    ? `[mpesa] Fulfilled ${CheckoutRequestID} (independently verified), receipt ${mpesaReceiptNumber}`
-                    : `[mpesa] ${CheckoutRequestID} already fulfilled or no matching pending payment`
-            );
+            if (credited) {
+                console.log(`[mpesa] Fulfilled ${CheckoutRequestID} (independently verified), receipt ${mpesaReceiptNumber}`);
+            } else {
+                const currentStatus = await getPendingPaymentStatus('mpesa', CheckoutRequestID);
+                if (currentStatus === 'completed') {
+                    console.log(`[mpesa] ${CheckoutRequestID} was already completed; duplicate callback safely ignored.`);
+                } else {
+                    console.error(`[mpesa] Atomic fulfillment failed for ${CheckoutRequestID}. Payment remains pending for recovery.`);
+                }
+            }
         } else {
             console.log(`[mpesa] Payment failed/cancelled: ${ResultDesc} (Code: ${ResultCode})`);
             await markPendingPaymentFailed('mpesa', CheckoutRequestID, ResultDesc);
