@@ -139,7 +139,7 @@ export const ProposalModal: React.FC<ProposalModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 max-h-[75dvh] overflow-y-auto">
           
           {/* Step 1: Select What You Offer */}
           <div className="space-y-2">

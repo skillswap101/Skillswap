@@ -3,6 +3,26 @@
 All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
+### Security & Architectural Hardening (Audit Implementations)
+- **Schema Normalization & Bidirectional Field Sync (`database/migrations/004_...`, `useCloudStateBridge.ts`)**:
+  - Added PostgreSQL migration `004` providing bidirectional synchronization triggers between legacy snake_case (`sender_id`, `receiver_id`, `host_id`, `attendee_id`) and camelCase (`senderId`, `recipientId`, `mentorId`, `learnerId`).
+  - Updated client data bridge (`cleanRow` & mutation payloads) to transparently support both column conventions, eliminating column mismatch errors.
+- **Atomic Financial Escrow Stored Procedures (`creditsService.ts`)**:
+  - Implemented PostgreSQL stored procedures with row-level locks (`SELECT ... FOR UPDATE`):
+    - `lock_escrow_credits(p_proposal_id, p_learner_id, p_mentor_id, p_amount)`
+    - `release_escrow_credits(p_session_id, p_escrow_id)`
+    - `refund_escrow_credits(p_escrow_id, p_reason)`
+  - Replaced non-atomic in-memory math in `creditsService.ts` with server-authoritative RPCs, preventing race conditions and double-spending.
+- **Authoritative Database Payment Persistence (`paymentsService.ts`)**:
+  - Completely removed the in-memory `Map` fallback (`inMemoryPending`), ensuring all pending payments are authoritatively stored in PostgreSQL before proceeding.
+- **Official Supabase Client `accessToken` Integration (`src/lib/supabase.ts`)**:
+  - Migrated `createClient` to use Supabase's official `accessToken` async callback with Firebase Auth, automatically handling 1-hour token rotation and eliminating manual header mutations.
+- **Unified Authentication Middleware (`middleware/auth.js` & `server.ts`)**:
+  - Consolidated authentication middleware across Express payment routes and core API endpoints to uniform Firebase Admin verification.
+- **Repository Hygiene & Render Alignment**:
+  - Removed dead unreferenced `src/data/mockData.ts`.
+  - Updated `render.yaml` to declare all production environment variables.
+
 ### Bug Fixes & Cloud State Resilience
 - **Offline & Unconfigured Cloud State Bridge (`useCloudStateBridge.ts` & `storageService.ts`)**:
   - Resolved `TypeError: Failed to fetch` during message sending (`addMessageToCloud`) and avatar uploads by checking `isSupabaseConfigured()`.

@@ -223,7 +223,7 @@ export const CallActionModal: React.FC<CallActionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-5xl w-full overflow-hidden shadow-2xl flex flex-col h-[88vh] relative">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-5xl w-full overflow-hidden shadow-2xl flex flex-col h-[88dvh] relative">
         
         {/* Call Header Bar */}
         <div className="flex items-center justify-between p-4 bg-slate-950/80 border-b border-slate-800 shrink-0">

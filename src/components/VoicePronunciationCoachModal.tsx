@@ -206,7 +206,7 @@ export const VoicePronunciationCoachModal: React.FC<VoicePronunciationCoachModal
         </div>
 
         {/* Modal Main Body */}
-        <div className="p-6 space-y-6 bg-slate-950/80 max-h-[80vh] overflow-y-auto">
+        <div className="p-6 space-y-6 bg-slate-950/80 max-h-[80dvh] overflow-y-auto">
           
           {/* Language Selector Tabs */}
           <div className="flex items-center justify-between flex-wrap gap-3 bg-slate-900 p-3 rounded-2xl border border-slate-800">

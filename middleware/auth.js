@@ -17,22 +17,22 @@ export const authenticateUser = async (req, res, next) => {
   }
 
   try {
-    const decodedToken = await firebaseAuth.verifyIdToken(idToken, false);
+    const decodedToken = await firebaseAuth.verifyIdToken(idToken, true);
     
     req.user = {
       uid: decodedToken.uid || decodedToken.user_id,
       email: decodedToken.email || '',
-      role: decodedToken.role || 'user'
+      role: decodedToken.role || 'user',
+      ...decodedToken
     };
 
     return next();
   } catch (error) {
     console.warn('[Auth Middleware] Firebase token verification failed:', error.message || error);
-
-    if (error.code === 'auth/id-token-revoked') {
-      return res.status(401).json({ error: 'Unauthorized: Token has been revoked' });
-    }
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired Firebase token' });
   }
 };
+
+export const verifyFirebaseToken = authenticateUser;
+
 

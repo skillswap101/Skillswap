@@ -593,7 +593,7 @@ export default function App() {
 
   if (authLoading || cloudLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6">
+      <div className="min-h-[100dvh] bg-slate-950 text-slate-100 flex items-center justify-center px-6">
         <div className="w-full max-w-md text-center space-y-5">
           <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
             <Sparkles className="w-7 h-7 text-indigo-400 animate-pulse" />
@@ -614,7 +614,7 @@ export default function App() {
 
   if (!firebaseAuthUser || !cloudAuthenticated || !currentUser) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6">
+      <div className="min-h-[100dvh] bg-slate-950 text-slate-100 flex items-center justify-center px-6">
         <div className="w-full max-w-md">
           <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-7 shadow-2xl text-center space-y-5">
             <div className="mx-auto w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
@@ -661,7 +661,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-[100dvh] bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
       {/* Email Alert Toast Triggers */}
       <EmailToastAlert />

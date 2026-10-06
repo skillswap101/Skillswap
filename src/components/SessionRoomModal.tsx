@@ -155,7 +155,7 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/90 backdrop-blur-lg overflow-y-auto">
       <div 
-        className="relative w-full max-w-5xl h-[92vh] bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden shadow-2xl text-slate-100 flex flex-col my-auto"
+        className="relative w-full max-w-5xl h-[92dvh] bg-slate-900 border border-slate-700/80 rounded-3xl overflow-hidden shadow-2xl text-slate-100 flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar */}

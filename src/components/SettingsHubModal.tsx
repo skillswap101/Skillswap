@@ -74,7 +74,7 @@ export const SettingsHubModal: React.FC<SettingsHubModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-xl w-full overflow-hidden shadow-2xl relative flex flex-col max-h-[90dvh]">
         
         {/* Header */}
         <div className="p-5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">

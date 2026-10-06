@@ -56,11 +56,25 @@ export interface CloudStateBridgeResult {
 function cleanRow<T>(row: any): T {
   if (!row) return row;
   const raw = row.raw_data && typeof row.raw_data === 'object' ? row.raw_data : {};
-  return {
+  const cleaned: any = {
     ...raw,
     ...row,
     id: String(row.id || raw.id),
-  } as T;
+  };
+
+  // Bidirectional mapping for messages
+  if (row.sender_id && !cleaned.senderId) cleaned.senderId = row.sender_id;
+  if (row.receiver_id && !cleaned.recipientId) cleaned.recipientId = row.receiver_id;
+  if (row.created_at && !cleaned.createdAt) cleaned.createdAt = String(row.created_at);
+
+  // Bidirectional mapping for sessions
+  if (row.host_id && !cleaned.mentorId) cleaned.mentorId = row.host_id;
+  if (row.attendee_id && !cleaned.learnerId) cleaned.learnerId = row.attendee_id;
+
+  // Bidirectional mapping for reviews
+  if (row.reviewer_id && !cleaned.authorId) cleaned.authorId = row.reviewer_id;
+
+  return cleaned as T;
 }
 
 function loadFromOfflineCache<T>(key: string, fallback: T): T {
@@ -334,6 +348,10 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       const payload = {
         ...session,
         participantIds,
+        mentorId: session.mentorId,
+        host_id: session.mentorId,
+        learnerId: session.learnerId,
+        attendee_id: session.learnerId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         raw_data: session,
@@ -358,6 +376,8 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     try {
       const payload = {
         ...data,
+        ...(data.mentorId ? { mentorId: data.mentorId, host_id: data.mentorId } : {}),
+        ...(data.learnerId ? { learnerId: data.learnerId, attendee_id: data.learnerId } : {}),
         updatedAt: new Date().toISOString(),
         raw_data: data,
       };
@@ -384,6 +404,9 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
       const payload = {
         ...message,
         senderId: uid,
+        sender_id: uid,
+        recipientId: message.recipientId,
+        receiver_id: message.recipientId,
         participantIds,
         read: message.read || false,
         createdAt: message.createdAt || new Date().toISOString(),
@@ -426,6 +449,8 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     try {
       const payload = {
         ...review,
+        authorId: review.authorId,
+        reviewer_id: review.authorId,
         createdAt: new Date().toISOString(),
         raw_data: review,
       };

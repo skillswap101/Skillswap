@@ -64,7 +64,7 @@ export const AuditDashboardModal: React.FC<AuditDashboardModalProps> = ({ isOpen
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900 text-slate-100 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-700 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95">
+      <div className="bg-slate-900 text-slate-100 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-700 overflow-hidden flex flex-col max-h-[90dvh] animate-in fade-in zoom-in-95">
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">

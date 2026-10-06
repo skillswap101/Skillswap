@@ -1,11 +1,10 @@
 /**
  * Server-authoritative credit-purchase fulfillment with Supabase Postgres.
+ * PostgreSQL is the sole authoritative state machine for payments.
  */
 import { supabase } from "../supabaseClient.js";
 
 export type Gateway = "stripe" | "mpesa" | "paypal";
-
-const inMemoryPending = new Map<string, any>();
 
 export async function createPendingPayment(params: {
   gateway: Gateway;
@@ -24,15 +23,10 @@ export async function createPendingPayment(params: {
     raw_data: params,
   };
 
-  inMemoryPending.set(paymentId, payload);
-
-  try {
-    const { error } = await supabase.from("pendingPayments").upsert(payload);
-    if (error) {
-      console.warn("[payments] Supabase pendingPayments notice (using in-memory fallback):", error.message);
-    }
-  } catch (err: any) {
-    console.warn("[payments] Supabase connection error for pendingPayments:", err.message);
+  const { error } = await supabase.from("pendingPayments").upsert(payload);
+  if (error) {
+    console.error("[payments] PostgreSQL pendingPayments upsert failed:", error.message);
+    throw new Error(`Database error: Could not persist pending payment (${error.message})`);
   }
 }
 
@@ -54,15 +48,12 @@ export async function fulfillPendingPayment(
       pending = data;
     }
   } catch (err: any) {
-    console.warn(`[payments] Failed to query pendingPayments for ${paymentId}:`, err.message);
+    console.error(`[payments] Failed to query pendingPayments for ${paymentId}:`, err.message);
+    return false;
   }
 
   if (!pending) {
-    pending = inMemoryPending.get(paymentId);
-  }
-
-  if (!pending) {
-    console.warn(`[payments] No pending payment found for ${paymentId}`);
+    console.warn(`[payments] No pending payment found in PostgreSQL for ${paymentId}`);
     return false;
   }
 
@@ -76,10 +67,9 @@ export async function fulfillPendingPayment(
     return false;
   }
 
-  // Attempt atomic fulfillment via PostgreSQL RPC.
+  // Atomic fulfillment via PostgreSQL stored procedure.
   // The RPC acquires row locks (SELECT ... FOR UPDATE) on pendingPayments and users,
   // increments timeCredits, marks payment as 'completed', and logs the transaction ledger atomically.
-  // Note: We deliberately DO NOT mutate in-memory or database records prior to RPC completion.
   try {
     const { data: rpcRes, error: rpcErr } = await supabase.rpc("fulfill_pending_payment", {
       p_payment_id: paymentId,
@@ -97,13 +87,15 @@ export async function fulfillPendingPayment(
     }
 
     if (rpcRes === true || (typeof rpcRes === "object" && rpcRes?.success === true)) {
-      // ONLY update in-memory record status AFTER successful atomic fulfillment in the database
-      pending.status = "completed";
-      pending.gatewayReceipt = gatewayReceipt || null;
-      pending.completedAt = new Date().toISOString();
-      inMemoryPending.set(paymentId, pending);
-
       console.log(`[payments] Payment ${paymentId} fulfilled successfully via atomic RPC.`);
+      await supabase
+        .from("pendingPayments")
+        .update({
+          status: "completed",
+          gatewayReceipt: gatewayReceipt || null,
+          completedAt: new Date().toISOString(),
+        })
+        .eq("id", paymentId);
       return true;
     }
 
@@ -113,7 +105,7 @@ export async function fulfillPendingPayment(
     return false;
   } catch (rpcEx: any) {
     console.error(`[payments] Exception during RPC fulfill_pending_payment for ${paymentId}:`, rpcEx.message);
-    // Strictly fail-closed: never fall back to non-atomic balance updates
+    // Strictly fail-closed
     return false;
   }
 }
@@ -124,16 +116,8 @@ export async function markPendingPaymentFailed(
   reason?: string
 ): Promise<void> {
   const paymentId = `${gateway}_${gatewayRef}`;
-  const mem = inMemoryPending.get(paymentId);
-  if (mem) {
-    mem.status = "failed";
-    mem.failReason = reason || null;
-    mem.failedAt = new Date().toISOString();
-    inMemoryPending.set(paymentId, mem);
-  }
-
   try {
-    await supabase
+    const { error } = await supabase
       .from("pendingPayments")
       .update({
         status: "failed",
@@ -141,7 +125,12 @@ export async function markPendingPaymentFailed(
         failedAt: new Date().toISOString(),
       })
       .eq("id", paymentId);
-  } catch {}
+    if (error) {
+      console.error(`[payments] Failed to mark payment ${paymentId} as failed:`, error.message);
+    }
+  } catch (err: any) {
+    console.error(`[payments] Error updating failed status for ${paymentId}:`, err.message);
+  }
 }
 
 export async function getPendingPaymentStatus(
@@ -150,14 +139,16 @@ export async function getPendingPaymentStatus(
 ): Promise<string | null> {
   const paymentId = `${gateway}_${gatewayRef}`;
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("pendingPayments")
       .select("status")
       .eq("id", paymentId)
       .maybeSingle();
-    if (data?.status) return data.status;
-  } catch {}
-  return inMemoryPending.get(paymentId)?.status || null;
+    if (!error && data?.status) return data.status;
+  } catch (err: any) {
+    console.error(`[payments] Error querying status for ${paymentId}:`, err.message);
+  }
+  return null;
 }
 
 export async function getPendingPayment(
@@ -172,12 +163,15 @@ export async function getPendingPayment(
 } | null> {
   const paymentId = `${gateway}_${gatewayRef}`;
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("pendingPayments")
       .select("*")
       .eq("id", paymentId)
       .maybeSingle();
-    if (data) return data as any;
-  } catch {}
-  return inMemoryPending.get(paymentId) || null;
+    if (!error && data) return data as any;
+  } catch (err: any) {
+    console.error(`[payments] Error querying pending payment ${paymentId}:`, err.message);
+  }
+  return null;
 }
+

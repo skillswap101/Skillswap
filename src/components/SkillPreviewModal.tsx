@@ -156,7 +156,7 @@ export const SkillPreviewModal: React.FC<SkillPreviewModalProps> = ({
         </div>
 
         {/* Tab Contents */}
-        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 space-y-6 max-h-[60dvh] overflow-y-auto">
           {activeTab === 'preview' && (
             <div className="space-y-6">
               {/* Media Preview Box */}

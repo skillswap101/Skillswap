@@ -55,12 +55,14 @@ export type UserProfile = User;
 export interface Review {
   id: string;
   skillId: string;
+  authorId?: string;
   authorName: string;
   authorAvatar: string;
   rating: number;
   comment: string;
   date: string;
   skillTitle: string;
+  createdAt?: string;
 }
 
 export interface Skill {

@@ -46,15 +46,33 @@
     --accent-secondary: #14b8a6;
   }
 
+  html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
+  }
+
   body {
+    min-height: 100%;
+    min-height: 100dvh;
     background-color: var(--bg-primary);
     color: var(--text-primary);
     font-family: var(--font-sans);
     letter-spacing: -0.011em;
     transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     overflow-x: hidden;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    min-height: 100%;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -119,5 +137,21 @@
 .dark .bg-grid-pattern {
   background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+/* Prevent sticky header and fixed UI elements jittering on mobile momentum scrolling */
+header.sticky,
+.sticky {
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Prevent modal scroll chaining from shaking background page */
+.overflow-y-auto {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 

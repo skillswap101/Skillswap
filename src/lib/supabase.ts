@@ -31,6 +31,16 @@ export const supabase = isSupabaseConfigured()
         persistSession: false,
         autoRefreshToken: false,
       },
+      accessToken: async () => {
+        try {
+          const { auth } = await import('../firebase');
+          const user = auth.currentUser;
+          if (user) {
+            return await user.getIdToken();
+          }
+        } catch {}
+        return null;
+      },
     })
   : (new Proxy({} as SupabaseClient, {
       get() {
@@ -40,7 +50,7 @@ export const supabase = isSupabaseConfigured()
 
 /**
  * Attaches the Firebase JWT token to the client's Authorization header
- * so Supabase RLS can evaluate auth.uid() if Third-Party JWT is enabled in Supabase Dashboard.
+ * Preserved for backward compatibility while accessToken callback provides automatic refresh.
  */
 export function setSupabaseAuthToken(token: string | null) {
   if (!isSupabaseConfigured()) return;

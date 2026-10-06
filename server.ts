@@ -60,7 +60,7 @@ export async function verifyFirebaseToken(
     req.user = decodedToken;
     next();
   } catch (error) {
-    res.status(403).json({ error: "Unauthorized: Invalid or expired token" });
+    res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
   }
 }
 

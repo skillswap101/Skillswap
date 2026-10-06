@@ -38,19 +38,36 @@ async function run() {
   const originalRpc = supabase.rpc.bind(supabase);
   const originalFrom = supabase.from.bind(supabase);
 
-  // In unit test without live DB connection, mock supabase.from to prevent fetch timeout to placeholder
+  // In unit test without live DB connection, provide a robust in-memory table mock
+  const mockTableData = new Map<string, any>();
   (supabase as any).from = (tableName: string) => {
     return {
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: null, error: null }),
+      select: (_cols?: string) => ({
+        eq: (_col: string, val: string) => ({
+          maybeSingle: async () => ({ data: mockTableData.get(val) || null, error: null }),
+          single: async () => {
+            const row = mockTableData.get(val);
+            return row ? { data: row, error: null } : { data: null, error: new Error('Not found') };
+          },
         }),
       }),
-      upsert: async () => ({ error: null }),
-      update: () => ({
-        eq: async () => ({ error: null }),
+      upsert: async (payload: any) => {
+        const id = payload.id;
+        mockTableData.set(id, { ...mockTableData.get(id), ...payload });
+        return { error: null };
+      },
+      update: (payload: any) => ({
+        eq: async (_col: string, val: string) => {
+          const existing = mockTableData.get(val) || {};
+          mockTableData.set(val, { ...existing, ...payload });
+          return { error: null };
+        },
       }),
-      insert: async () => ({ error: null }),
+      insert: async (payload: any) => {
+        const id = payload.id || `row_${Date.now()}`;
+        mockTableData.set(id, payload);
+        return { error: null };
+      },
     };
   };
 

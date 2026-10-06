@@ -544,7 +544,7 @@ export const RequestedSkillsView: React.FC<RequestedSkillsViewProps> = ({
       {/* Post a Skill Request Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <form onSubmit={handleCreateRequestSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleCreateRequestSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-lg font-bold text-white">Post a Requested Skill</h3>

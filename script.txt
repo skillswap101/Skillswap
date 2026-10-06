@@ -1,0 +1,483 @@
+cat > ~/storage/downloads/SkillSwap_Full_Audit_Findings.txt <<'EOF'
+SkillSwap — FULL AUDIT FINDINGS
+
+ARCHITECTURE
+Current intended architecture:
+Firebase Auth → Firebase UID → Supabase Third-Party Auth → Supabase PostgreSQL
+Browser → Express API → Supabase service role
+
+The architecture is valid, but the implementation is mixed/inconsistent.
+
+============================================================
+CRITICAL FINDINGS
+============================================================
+
+1. DATABASE SCHEMA DOES NOT MATCH APPLICATION CODE
+
+- messages: database uses sender_id, receiver_id, created_at;
+  application uses senderId, recipientId, createdAt, participantIds.
+
+- sessions: database uses host_id, attendee_id, created_at;
+  application uses mentorId, learnerId, participantIds, createdAt.
+
+- proposals contains duplicated snake_case/camelCase fields such as
+  sender_id/senderId and receiver_id/recipientId.
+
+- reviews uses reviewer_id/reviewee_id while application uses
+  camelCase-style objects.
+
+ACTION:
+Establish one authoritative schema and update application/database
+consistently. Do not guess field mappings.
+
+------------------------------------------------------------
+
+2. ESCROW IS NOT ATOMIC
+
+creditsService.ts performs SELECT balance → calculate → UPDATE for
+proposal acceptance, escrow release, and refunds.
+
+Concurrent requests can race.
+
+ACTION:
+Replace financial escrow mutations with PostgreSQL transactions/RPCs
+using row locks.
+
+------------------------------------------------------------
+
+3. PAYMENT PERSISTENCE CAN FALL BACK TO MEMORY
+
+paymentsService.ts can keep pending payments in an in-memory Map when
+Supabase fails.
+
+A Render restart can lose that state.
+
+ACTION:
+PostgreSQL must be authoritative. If database persistence fails,
+fail the operation instead of silently using memory as authoritative
+payment storage.
+
+------------------------------------------------------------
+
+4. FIREBASE → SUPABASE BRIDGE IS NOT FULLY VERIFIED
+
+Supabase Third-Party Auth has Firebase project skillswapapp-905ca
+registered.
+
+The frontend still uses manual supabase.rest.headers.Authorization
+mutation.
+
+No setCustomUserClaims implementation was found.
+
+ACTION:
+
+- Verify Firebase tokens contain role=authenticated.
+- Use Supabase's official accessToken callback pattern.
+- Test Firebase login → token → Supabase → auth.uid() → RLS.
+- Do not treat successful Firebase login alone as proof that Supabase
+  RLS authentication works.
+
+------------------------------------------------------------
+
+5. USERS RLS CHANGE
+
+The recent users_select_authenticated/users_insert_self/
+users_update_self experiment was reversed.
+
+Restored policies:
+
+- Allow read users
+- Allow upsert users
+
+ACTION:
+Do not change users RLS again until the Firebase/Supabase bridge is
+verified.
+
+------------------------------------------------------------
+
+6. TEN RLS TABLES HAVE NO POLICIES
+
+Supabase security advisor reports RLS enabled without policies on:
+
+- escrowTransactions
+- listings
+- notifications
+- pendingPayments
+- pending_payments
+- profiles
+- stripe_events
+- swaps
+- transactions
+- webrtcRooms
+
+This is fail-closed, which is safer than public access, but features
+may fail.
+
+ACTION:
+Inspect actual application usage and classify each table as:
+
+- client-readable
+- client-writable
+- server-only
+- obsolete
+- duplicate
+
+before adding policies.
+
+------------------------------------------------------------
+
+7. DUPLICATE PAYMENT TABLES
+
+Both pendingPayments and pending_payments exist.
+
+ACTION:
+Choose one authoritative table after inspecting all references and
+migrations. Migrate/remove the duplicate safely.
+
+------------------------------------------------------------
+
+8. DUPLICATE AUTHENTICATION MIDDLEWARE
+
+There are two Firebase authentication paths:
+
+- server.ts verifyFirebaseToken()
+- middleware/auth.js authenticateUser()
+
+Payment routes use the second.
+
+ACTION:
+Consolidate to one canonical Firebase Admin verification path.
+
+------------------------------------------------------------
+
+9. SERVER SUPABASE CREDENTIAL FALLBACKS
+
+server/supabaseClient.ts has fallback paths involving anon/Vite
+credentials.
+
+ACTION:
+Server-side Supabase client should use only:
+
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+
+and fail clearly if missing.
+
+------------------------------------------------------------
+
+10. FIREBASE CONFIGURATION FALLBACKS
+
+src/firebase.ts contains fallback Firebase configuration.
+
+ACTION:
+Use environment configuration and fail clearly when required
+production configuration is missing.
+
+------------------------------------------------------------
+
+11. PAYMENT SIMULATORS STILL EXIST
+
+PayPal and M-Pesa contain simulator/test paths gated by NODE_ENV and
+ALLOW_PAYMENT_SIMULATORS.
+
+Production is currently protected by those gates.
+
+ACTION:
+Keep simulators out of production behaviour; eventually isolate/remove
+them from production payment code.
+
+------------------------------------------------------------
+
+12. M-PESA OWNERSHIP CHECK
+
+Payment status checks compare pending.userId with verified req.user.uid.
+
+STATUS:
+PASS.
+
+------------------------------------------------------------
+
+13. PAYPAL OWNERSHIP AND AMOUNT CHECKS
+
+Capture verifies payment ownership and compares captured amount/currency
+against the pending record.
+
+STATUS:
+PASS.
+
+------------------------------------------------------------
+
+14. STRIPE WEBHOOK
+
+Stripe webhook signature verification exists.
+
+STATUS:
+PASS, assuming production webhook secret is configured correctly.
+
+------------------------------------------------------------
+
+15. PAYMENT ATOMIC RPC
+
+fulfill_pending_payment exists and uses locking for payment fulfillment,
+credit update, completion, and transaction logging.
+
+STATUS:
+GOOD.
+
+However, duplicate function signatures exist and must be cleaned up
+after inspection.
+
+------------------------------------------------------------
+
+16. ESCROW HAS NO EQUIVALENT ATOMIC FINANCIAL RPC
+
+ACTION:
+Add atomic PostgreSQL operations for:
+
+- lock escrow credits
+- release escrow credits
+- refund escrow credits
+
+------------------------------------------------------------
+
+17. MOCK/DEMO DATA REMAINS
+
+Mock-related runtime data and fallback/demo behaviour still exists in
+parts of the repository.
+
+ACTION:
+Identify each occurrence and remove only where it can affect production
+truth.
+
+------------------------------------------------------------
+
+18. LOCAL STORAGE
+
+localStorage is used heavily.
+
+ACTION:
+It may be used for UI/offline cache, but never as authority for:
+
+- credits
+- escrow
+- payments
+- transactions
+- identity
+
+------------------------------------------------------------
+
+19. OLD AUDIT DOCUMENTS ARE STALE
+
+Existing September audit reports describe older states.
+
+ACTION:
+Treat them as historical only. Generate a fresh audit after remediation.
+
+------------------------------------------------------------
+
+20. DEAD/DUPLICATE ARCHITECTURE
+
+Historical duplicate modules remain around authentication, escrow, API
+layers, and other areas.
+
+ACTION:
+Remove only after dependency/reference verification.
+
+------------------------------------------------------------
+
+21. RENDER
+
+Current production Render service is live on main.
+
+No broad Render infrastructure change is currently required.
+
+ACTION:
+Verify actual dashboard environment variables against what the server
+expects.
+
+------------------------------------------------------------
+
+22. RENDER ENVIRONMENT VARIABLES
+
+render.yaml and server code expect different groups of variables.
+
+ACTION:
+Compare actual Render environment with:
+
+- VITE_SUPABASE_URL
+- VITE_SUPABASE_ANON_KEY
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
+- Firebase server credentials
+- other required production secrets
+
+Do not expose secret values.
+
+------------------------------------------------------------
+
+23. TEST COVERAGE
+
+Existing tests cover:
+
+- health
+- unauthenticated access
+- forged tokens
+- mocked payment RPC behaviour
+
+Missing:
+
+Firebase token → Supabase Third-Party Auth → auth.uid() → RLS →
+actual database operation.
+
+ACTION:
+Add an integration test for the real authentication/data path.
+
+============================================================
+PRIORITY ORDER
+============================================================
+
+P0 — DO FIRST
+
+1. Fix/standardize database schema vs application field names.
+
+2. Verify Firebase JWT → Supabase Third-Party Auth.
+
+3. Verify role=authenticated exists in Firebase JWT.
+
+4. Replace manual Supabase Authorization header mutation with official
+   accessToken integration.
+
+5. Remove payment in-memory persistence fallback.
+
+6. Make escrow operations atomic.
+
+7. Resolve pendingPayments vs pending_payments.
+
+8. Resolve duplicate fulfill_pending_payment functions.
+
+
+P1
+
+9. Consolidate Firebase authentication middleware.
+
+10. Verify every sensitive endpoint derives UID from verified Firebase
+    token.
+
+11. Audit every RLS table against actual application access.
+
+12. Fix missing RLS policies based on actual requirements.
+
+13. Fix server Supabase credential handling.
+
+14. Verify Render environment variables.
+
+15. Remove/isolate production payment simulator code.
+
+
+P2
+
+16. Remove remaining runtime mock data.
+
+17. Separate legitimate offline cache from authoritative data.
+
+18. Remove dead/duplicate modules.
+
+19. Fix excessive realtime/table fetching.
+
+20. Normalize database naming.
+
+21. Add Firebase → Supabase → RLS integration tests.
+
+22. Add real PostgreSQL concurrency tests for financial operations.
+
+
+P3
+
+23. Clean documentation.
+
+24. Update stale audits.
+
+25. Final production audit.
+
+26. Final Render deployment verification.
+
+27. Final payment tests.
+
+28. Final authentication/RLS tests.
+
+============================================================
+BOTTOM LINE
+============================================================
+
+Do not let AI Studio start changing RLS or rewriting the authentication
+architecture yet.
+
+Correct order:
+
+database/schema audit
+→ Firebase/Supabase bridge verification
+→ data-flow normalization
+→ financial atomicity
+→ RLS
+→ cleanup
+→ testing
+→ deployment
+
+The biggest problem is not the users RLS change that was reversed.
+
+The biggest problem is that the TypeScript models, Supabase schema,
+browser queries, Express APIs, and financial services are not
+consistently using one data model.
+
+============================================================
+IMPORTANT INSTRUCTION FOR AI STUDIO
+============================================================
+
+AUDIT FIRST. DO NOT MODIFY THE PROJECT YET.
+
+Before changing code, inspect the entire repository, database schema,
+migrations, Supabase policies, Firebase authentication bridge,
+server APIs, frontend queries, payment services, escrow services,
+notifications, realtime, storage, Render configuration, tests, mock
+data, and environment-variable names.
+
+Do not guess.
+
+Do not replace Firebase Authentication with Supabase Auth.
+
+Do not blindly change RLS.
+
+Do not delete tables or columns before tracing every reference.
+
+Do not rename database fields until every application query and
+mutation using those fields has been identified.
+
+Do not make financial logic authoritative in the browser or localStorage.
+
+For every proposed change, report:
+
+1. Current implementation
+2. Exact problem
+3. Evidence/file location
+4. Risk
+5. Recommended fix
+6. Files/tables affected
+7. Whether migration is required
+8. Whether production data could be affected
+
+Only after the complete audit is finished should implementation begin.
+EOF
+
+echo
+echo "=================================================="
+echo "SkillSwap audit file created successfully."
+echo "=================================================="
+echo
+echo "File:"
+echo "~/storage/downloads/SkillSwap_Full_Audit_Findings.txt"
+echo
+echo "To verify it exists:"
+ls -lh ~/storage/downloads/SkillSwap_Full_Audit_Findings.txt
+echo
+echo "To view it:"
+cat ~/storage/downloads/SkillSwap_Full_Audit_Findings.txt

@@ -45,58 +45,34 @@ export async function acceptProposal(
   let escrowId: string | null = null;
 
   if (amount > 0) {
-    const { data: learner, error: learnerErr } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", learnerId)
-      .single();
+    // Execute atomic PostgreSQL RPC with row-level locks
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("lock_escrow_credits", {
+      p_proposal_id: proposalId,
+      p_learner_id: learnerId,
+      p_mentor_id: mentorId,
+      p_amount: amount,
+    });
 
-    if (learnerErr || !learner) {
-      throw new CreditsError("Learner profile not found", 404);
+    if (rpcErr) {
+      console.error("[creditsService] lock_escrow_credits RPC error:", rpcErr);
+      throw new CreditsError("Failed to lock escrow credits in database", 500);
     }
 
-    const learnerBalance = Number(learner.timeCredits) || 0;
-    if (learnerBalance < amount) {
-      throw new CreditsError("Learner does not have enough time credits for this swap", 402);
+    if (!rpcRes?.success) {
+      if (rpcRes?.error === "INSUFFICIENT_CREDITS") {
+        throw new CreditsError("Learner does not have enough time credits for this swap", 402);
+      }
+      throw new CreditsError(rpcRes?.message || "Failed to lock credits", 400);
     }
 
-    // Deduct from timeCredits, add to escrowLockedCredits
+    escrowId = rpcRes.escrowId || null;
+  } else {
+    // Zero credit amount swap - mark accepted directly
     await supabase
-      .from("users")
-      .update({
-        timeCredits: learnerBalance - amount,
-        escrowLockedCredits: (Number(learner.escrowLockedCredits) || 0) + amount,
-        updatedAt: new Date().toISOString(),
-      })
-      .eq("id", learnerId);
-
-    // Create escrow transaction
-    const escrowPayload = {
-      proposalId,
-      learnerId,
-      mentorId,
-      amount,
-      currency: "credits",
-      status: "LOCKED",
-      lockedAt: new Date().toISOString(),
-    };
-
-    const { data: escrowRow, error: escrowErr } = await supabase
-      .from("escrowTransactions")
-      .insert(escrowPayload)
-      .select("id")
-      .single();
-
-    if (!escrowErr && escrowRow) {
-      escrowId = escrowRow.id;
-    }
+      .from("proposals")
+      .update({ status: "accepted", updatedAt: new Date().toISOString() })
+      .eq("id", proposalId);
   }
-
-  // Update proposal status
-  await supabase
-    .from("proposals")
-    .update({ status: "accepted", updatedAt: new Date().toISOString() })
-    .eq("id", proposalId);
 
   // Create session
   const sessionPayload = {
@@ -190,48 +166,20 @@ export async function completeSession(
     throw new CreditsError("Cannot complete a cancelled session", 409);
   }
 
-  // Release escrow credits if locked
+  // Release escrow credits atomically if locked
   if (session.escrowId) {
-    const { data: escrow } = await supabase
-      .from("escrowTransactions")
-      .select("*")
-      .eq("id", session.escrowId)
-      .single();
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("release_escrow_credits", {
+      p_session_id: sessionId,
+      p_escrow_id: session.escrowId,
+    });
 
-    if (escrow && escrow.status === "LOCKED") {
-      const amount = Number(escrow.amount) || 0;
+    if (rpcErr) {
+      console.error("[creditsService] release_escrow_credits RPC error:", rpcErr);
+      throw new CreditsError("Failed to release escrow credits in database", 500);
+    }
 
-      // Credit mentor
-      const { data: mentor } = await supabase.from("users").select("*").eq("id", escrow.mentorId).single();
-      if (mentor) {
-        await supabase
-          .from("users")
-          .update({
-            timeCredits: (Number(mentor.timeCredits) || 0) + amount,
-            hoursTaught: (Number(mentor.hoursTaught) || 0) + 1,
-            updatedAt: new Date().toISOString(),
-          })
-          .eq("id", escrow.mentorId);
-      }
-
-      // Deduct from learner's escrowLockedCredits
-      const { data: learner } = await supabase.from("users").select("*").eq("id", escrow.learnerId).single();
-      if (learner) {
-        await supabase
-          .from("users")
-          .update({
-            escrowLockedCredits: Math.max(0, (Number(learner.escrowLockedCredits) || 0) - amount),
-            hoursLearned: (Number(learner.hoursLearned) || 0) + 1,
-            updatedAt: new Date().toISOString(),
-          })
-          .eq("id", escrow.learnerId);
-      }
-
-      // Mark escrow released
-      await supabase
-        .from("escrowTransactions")
-        .update({ status: "RELEASED", releasedAt: new Date().toISOString() })
-        .eq("id", session.escrowId);
+    if (rpcRes && !rpcRes.success) {
+      throw new CreditsError(rpcRes.message || "Failed to release escrow", 400);
     }
   }
 
@@ -267,32 +215,20 @@ export async function cancelSession(sessionId: string, callerUid: string): Promi
     throw new CreditsError(`Session is already ${session.status}`, 409);
   }
 
-  // Refund locked escrow back to learner
+  // Refund locked escrow atomically back to learner
   if (session.escrowId) {
-    const { data: escrow } = await supabase
-      .from("escrowTransactions")
-      .select("*")
-      .eq("id", session.escrowId)
-      .single();
+    const { data: rpcRes, error: rpcErr } = await supabase.rpc("refund_escrow_credits", {
+      p_escrow_id: session.escrowId,
+      p_reason: `Session cancelled by user ${callerUid}`,
+    });
 
-    if (escrow && escrow.status === "LOCKED") {
-      const amount = Number(escrow.amount) || 0;
-      const { data: learner } = await supabase.from("users").select("*").eq("id", escrow.learnerId).single();
-      if (learner) {
-        await supabase
-          .from("users")
-          .update({
-            timeCredits: (Number(learner.timeCredits) || 0) + amount,
-            escrowLockedCredits: Math.max(0, (Number(learner.escrowLockedCredits) || 0) - amount),
-            updatedAt: new Date().toISOString(),
-          })
-          .eq("id", escrow.learnerId);
-      }
+    if (rpcErr) {
+      console.error("[creditsService] refund_escrow_credits RPC error:", rpcErr);
+      throw new CreditsError("Failed to refund escrow credits in database", 500);
+    }
 
-      await supabase
-        .from("escrowTransactions")
-        .update({ status: "REFUNDED", refundedAt: new Date().toISOString() })
-        .eq("id", session.escrowId);
+    if (rpcRes && !rpcRes.success) {
+      throw new CreditsError(rpcRes.message || "Failed to refund escrow", 400);
     }
   }
 

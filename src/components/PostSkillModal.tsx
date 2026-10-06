@@ -124,7 +124,7 @@ export const PostSkillModal: React.FC<PostSkillModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75dvh] overflow-y-auto">
           <div>
             <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-1">
               Skill Title

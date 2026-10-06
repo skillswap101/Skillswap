@@ -163,7 +163,7 @@ export const ChatPortal: React.FC<ChatPortalProps> = ({
   };
 
   return (
-    <div className="h-[80vh] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in duration-300">
+    <div className="h-[80dvh] bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in fade-in duration-300">
       
       {/* Thread List Sidebar */}
       <div className="w-full md:w-80 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0">
