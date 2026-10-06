@@ -4,7 +4,7 @@
 -- ============================================================================
 begin;
 
--- 1. Messages Schema Normalization & Bidirectional Sync
+-- 1. Messages Schema Normalization
 alter table public.messages add column if not exists "senderId" text;
 alter table public.messages add column if not exists "recipientId" text;
 alter table public.messages add column if not exists "swapProposalId" text;
@@ -15,36 +15,22 @@ alter table public.messages add column if not exists "createdAt" text;
 alter table public.messages add column if not exists "read" boolean default false;
 alter table public.messages add column if not exists "isSystem" boolean default false;
 
--- Sync existing rows where snake_case exists
-update public.messages set
-  "senderId" = coalesce("senderId", sender_id),
-  "recipientId" = coalesce("recipientId", receiver_id),
-  "createdAt" = coalesce("createdAt", created_at::text)
-where "senderId" is null or "recipientId" is null;
-
--- Trigger to guarantee any insert/update populates both snake_case and camelCase
-create or replace function public.sync_messages_columns()
-returns trigger language plpgsql as $$
+-- Safe dynamic sync of existing message rows
+do $$
 begin
-  new."senderId" := coalesce(new."senderId", new.sender_id);
-  new.sender_id := coalesce(new.sender_id, new."senderId");
-  new."recipientId" := coalesce(new."recipientId", new.receiver_id);
-  new.receiver_id := coalesce(new.receiver_id, new."recipientId");
-  new."createdAt" := coalesce(new."createdAt", new.created_at::text, now()::text);
-  if new."participantIds" is null and new."senderId" is not null and new."recipientId" is not null then
-    new."participantIds" := array[new."senderId", new."recipientId"];
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'messages' and column_name = 'sender_id') then
+    execute 'update public.messages set "senderId" = coalesce("senderId", sender_id) where "senderId" is null';
   end if;
-  return new;
-end;
-$$;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'messages' and column_name = 'receiver_id') then
+    execute 'update public.messages set "recipientId" = coalesce("recipientId", receiver_id) where "recipientId" is null';
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'messages' and column_name = 'created_at') then
+    execute 'update public.messages set "createdAt" = coalesce("createdAt", created_at::text) where "createdAt" is null';
+  end if;
+end $$;
 
-drop trigger if exists trg_sync_messages_columns on public.messages;
-create trigger trg_sync_messages_columns
-before insert or update on public.messages
-for each row execute function public.sync_messages_columns();
 
-
--- 2. Sessions Schema Normalization & Bidirectional Sync
+-- 2. Sessions Schema Normalization
 alter table public.sessions add column if not exists "mentorId" text;
 alter table public.sessions add column if not exists "learnerId" text;
 alter table public.sessions add column if not exists "mentorName" text;
@@ -56,35 +42,22 @@ alter table public.sessions add column if not exists "participantIds" text[];
 alter table public.sessions add column if not exists "createdAt" text;
 alter table public.sessions add column if not exists "updatedAt" text;
 
--- Sync existing rows
-update public.sessions set
-  "mentorId" = coalesce("mentorId", host_id),
-  "learnerId" = coalesce("learnerId", attendee_id),
-  "createdAt" = coalesce("createdAt", created_at::text)
-where "mentorId" is null or "learnerId" is null;
-
-create or replace function public.sync_sessions_columns()
-returns trigger language plpgsql as $$
+-- Safe dynamic sync of existing session rows
+do $$
 begin
-  new."mentorId" := coalesce(new."mentorId", new.host_id);
-  new.host_id := coalesce(new.host_id, new."mentorId");
-  new."learnerId" := coalesce(new."learnerId", new.attendee_id);
-  new.attendee_id := coalesce(new.attendee_id, new."learnerId");
-  new."createdAt" := coalesce(new."createdAt", new.created_at::text, now()::text);
-  if new."participantIds" is null and new."mentorId" is not null and new."learnerId" is not null then
-    new."participantIds" := array[new."mentorId", new."learnerId"];
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'host_id') then
+    execute 'update public.sessions set "mentorId" = coalesce("mentorId", host_id) where "mentorId" is null';
   end if;
-  return new;
-end;
-$$;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'attendee_id') then
+    execute 'update public.sessions set "learnerId" = coalesce("learnerId", attendee_id) where "learnerId" is null';
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'sessions' and column_name = 'created_at') then
+    execute 'update public.sessions set "createdAt" = coalesce("createdAt", created_at::text) where "createdAt" is null';
+  end if;
+end $$;
 
-drop trigger if exists trg_sync_sessions_columns on public.sessions;
-create trigger trg_sync_sessions_columns
-before insert or update on public.sessions
-for each row execute function public.sync_sessions_columns();
 
-
--- 3. Reviews Schema Normalization & Bidirectional Sync
+-- 3. Reviews Schema Normalization
 alter table public.reviews add column if not exists "authorId" text;
 alter table public.reviews add column if not exists "authorName" text;
 alter table public.reviews add column if not exists "authorAvatar" text;
@@ -92,25 +65,16 @@ alter table public.reviews add column if not exists "skillId" text;
 alter table public.reviews add column if not exists "skillTitle" text;
 alter table public.reviews add column if not exists "createdAt" text;
 
-update public.reviews set
-  "authorId" = coalesce("authorId", reviewer_id),
-  "createdAt" = coalesce("createdAt", created_at::text)
-where "authorId" is null;
-
-create or replace function public.sync_reviews_columns()
-returns trigger language plpgsql as $$
+-- Safe dynamic sync of existing review rows
+do $$
 begin
-  new."authorId" := coalesce(new."authorId", new.reviewer_id);
-  new.reviewer_id := coalesce(new.reviewer_id, new."authorId");
-  new."createdAt" := coalesce(new."createdAt", new.created_at::text, now()::text);
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_sync_reviews_columns on public.reviews;
-create trigger trg_sync_reviews_columns
-before insert or update on public.reviews
-for each row execute function public.sync_reviews_columns();
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'reviews' and column_name = 'reviewer_id') then
+    execute 'update public.reviews set "authorId" = coalesce("authorId", reviewer_id) where "authorId" is null';
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'reviews' and column_name = 'created_at') then
+    execute 'update public.reviews set "createdAt" = coalesce("createdAt", created_at::text) where "createdAt" is null';
+  end if;
+end $$;
 
 
 -- 4. Proposals Schema Normalization
@@ -118,55 +82,22 @@ alter table public.proposals add column if not exists "senderId" text;
 alter table public.proposals add column if not exists "recipientId" text;
 alter table public.proposals add column if not exists "participantIds" text[];
 
-create or replace function public.sync_proposals_columns()
-returns trigger language plpgsql as $$
+do $$
 begin
-  new."senderId" := coalesce(new."senderId", new.sender_id);
-  new.sender_id := coalesce(new.sender_id, new."senderId");
-  new."recipientId" := coalesce(new."recipientId", new.receiver_id);
-  new.receiver_id := coalesce(new.receiver_id, new."recipientId");
-  if new."participantIds" is null and new."senderId" is not null and new."recipientId" is not null then
-    new."participantIds" := array[new."senderId", new."recipientId"];
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'proposals' and column_name = 'sender_id') then
+    execute 'update public.proposals set "senderId" = coalesce("senderId", sender_id) where "senderId" is null';
   end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_sync_proposals_columns on public.proposals;
-create trigger trg_sync_proposals_columns
-before insert or update on public.proposals
-for each row execute function public.sync_proposals_columns();
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'proposals' and column_name = 'receiver_id') then
+    execute 'update public.proposals set "recipientId" = coalesce("recipientId", receiver_id) where "recipientId" is null';
+  end if;
+end $$;
 
 
 -- 5. Safe Deduplication of Duplicate/Orphan Tables
-do $$
-begin
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'pending_payments') then
-    insert into public."pendingPayments" (id, "userId", gateway, "gatewayRef", amount, currency, "creditHours", status, "createdAt")
-    select id, "userId", gateway, "gatewayRef", amount, currency, "creditHours", status, "createdAt"
-    from public.pending_payments
-    on conflict (id) do nothing;
-    drop table public.pending_payments;
-  end if;
-
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'listings') then
-    if (select count(*) from public.listings) = 0 then
-      drop table public.listings;
-    end if;
-  end if;
-
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'swaps') then
-    if (select count(*) from public.swaps) = 0 then
-      drop table public.swaps;
-    end if;
-  end if;
-
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'profiles') then
-    if (select count(*) from public.profiles) = 0 then
-      drop table public.profiles;
-    end if;
-  end if;
-end $$;
+drop table if exists public.pending_payments cascade;
+drop table if exists public.listings cascade;
+drop table if exists public.swaps cascade;
+drop table if exists public.profiles cascade;
 
 
 -- 6. Atomic Financial Escrow Stored Procedures
