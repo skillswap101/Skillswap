@@ -508,7 +508,14 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
     const fetchData = async () => {
       try {
         const token = await firebaseUser.getIdToken().catch(() => null);
-        if (token) setSupabaseAuthToken(token);
+        if (token) {
+          setSupabaseAuthToken(token);
+          // Sync custom claims with server upon authentication for Third-Party Auth RLS
+          fetch('/api/auth/sync-claims', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => {});
+        }
 
         // Fetch User Profile
         const { data: userRow } = await supabase

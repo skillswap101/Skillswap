@@ -1,4 +1,4 @@
-import { firebaseAuth } from './firebaseAdmin.js';
+import { firebaseAuth, ensureAuthenticatedClaim } from './firebaseAdmin.js';
 import { supabase, isSupabaseConfigured } from './server/supabaseClient.js';
 
 import express from 'express';
@@ -26,43 +26,8 @@ import {
 
 dotenv.config();
 
-// Extend Express Request type to include the verified Firebase decoded token
-export interface AuthenticatedRequest extends Request {
-  user?: DecodedIdToken;
-}
-
-// Middleware to verify Firebase ID Token
-export async function verifyFirebaseToken(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized: No token provided" });
-    return;
-  }
-
-  const token = authHeader.split("Bearer ")[1];
-
-  if (!firebaseAuth) {
-    // Previously this silently accepted the raw token string as a fake uid
-    // when Firebase Admin wasn't initialized - i.e. anyone could "log in"
-    // as any uid just by sending it as a bearer token. That's gone: if the
-    // Admin SDK isn't up, auth fails closed, not open.
-    res.status(503).json({ error: "Authentication service unavailable" });
-    return;
-  }
-
-  try {
-    const decodedToken = await firebaseAuth.verifyIdToken(token);
-    req.user = decodedToken;
-    next();
-  } catch (error) {
-    res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
-  }
-}
+import { verifyFirebaseToken, type AuthenticatedRequest } from './middleware/auth.js';
+export { verifyFirebaseToken, type AuthenticatedRequest };
 
 const app = express();
 
@@ -264,6 +229,17 @@ app.post("/api/sessions/:id/cancel", verifyFirebaseToken, async (req: Authentica
     return res.json({ ok: true });
   } catch (error) {
     return handleCreditsError(error, res);
+  }
+});
+
+// ===== Auth & Claims Bridge =====
+app.post("/api/auth/sync-claims", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const synced = await ensureAuthenticatedClaim(uid);
+    res.json({ success: true, uid, synced });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to sync user claims", details: err?.message });
   }
 });
 

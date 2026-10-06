@@ -93,11 +93,20 @@ begin
 end $$;
 
 
--- 5. Safe Deduplication of Duplicate/Orphan Tables
+-- 5. Safe Deduplication & View Aliasing for Backward Compatibility
 drop table if exists public.pending_payments cascade;
 drop table if exists public.listings cascade;
 drop table if exists public.swaps cascade;
 drop table if exists public.profiles cascade;
+
+-- Aliasing views so any legacy query targeting listings, swaps, or profiles works seamlessly
+create or replace view public.listings as select * from public.skills;
+create or replace view public.swaps as select * from public.proposals;
+create or replace view public.profiles as select * from public.users;
+
+-- Clean up any obsolete fulfill_pending_payment function overloads safely
+drop function if exists public.fulfill_pending_payment(text);
+drop function if exists public.fulfill_pending_payment(text, text, numeric);
 
 
 -- 6. Atomic Financial Escrow Stored Procedures

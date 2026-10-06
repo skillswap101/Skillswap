@@ -159,6 +159,15 @@ async function runTests() {
     if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
   });
 
+  await test('POST /api/auth/sync-claims rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/auth/sync-claims', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: {},
+    });
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
   console.log(`\nResults: ${passed} passed, ${failed} failed.\n`);
   if (failed > 0) {
     process.exit(1);

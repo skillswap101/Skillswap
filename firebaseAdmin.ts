@@ -48,3 +48,25 @@ export const firebaseAuth: Auth | null = adminApp ? getAuth(adminApp) : null;
 // Firestore is decommissioned in favor of Supabase Postgres
 export const firestore = null as any;
 export const firebaseAdminInitError: string | null = initError;
+
+/**
+ * Ensures user has custom claim role='authenticated' for Supabase Third-Party Auth RLS.
+ */
+export async function ensureAuthenticatedClaim(uid: string): Promise<boolean> {
+  if (!firebaseAuth) return false;
+  try {
+    const user = await firebaseAuth.getUser(uid);
+    if (user.customClaims?.role !== 'authenticated') {
+      await firebaseAuth.setCustomUserClaims(uid, {
+        ...(user.customClaims || {}),
+        role: 'authenticated',
+      });
+      console.log(`[firebaseAdmin] Added custom claim 'role: authenticated' to user ${uid}`);
+    }
+    return true;
+  } catch (err: any) {
+    // Graceful no-op in lightweight Project ID mode without private key
+    return false;
+  }
+}
+
