@@ -19,13 +19,33 @@ export const verifyFirebaseToken = async (
   }
 
   const idToken = authHeader.split('Bearer ')[1].trim();
-  if (!idToken) {
+  if (!idToken || idToken === 'null' || idToken === 'undefined') {
     res.status(401).json({ error: 'Unauthorized: Empty token' });
     return;
   }
 
   if (!firebaseAuth) {
     res.status(503).json({ error: 'Authentication service unavailable' });
+    return;
+  }
+
+  // Pre-validate JWT structure and header before calling verifyIdToken
+  // A valid Firebase ID token must have 3 parts and a 'kid' claim in its header.
+  const parts = idToken.split('.');
+  if (parts.length !== 3) {
+    res.status(401).json({ error: 'Unauthorized: Malformed JWT token structure' });
+    return;
+  }
+
+  try {
+    const headerStr = Buffer.from(parts[0], 'base64url').toString('utf8');
+    const header = JSON.parse(headerStr);
+    if (!header || !header.kid || header.alg === 'none') {
+      res.status(401).json({ error: 'Unauthorized: Invalid token header (missing kid claim)' });
+      return;
+    }
+  } catch {
+    res.status(401).json({ error: 'Unauthorized: Malformed token header' });
     return;
   }
 
@@ -41,7 +61,7 @@ export const verifyFirebaseToken = async (
 
     next();
   } catch (error: any) {
-    console.warn('[Auth Middleware] Firebase token verification failed:', error?.message || error);
+    console.warn('[Auth Middleware] Token verification failed:', error?.code || 'auth/invalid-token');
     res.status(401).json({ error: 'Unauthorized: Invalid or expired Firebase token' });
   }
 };
