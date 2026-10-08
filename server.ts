@@ -237,9 +237,18 @@ app.post("/api/auth/sync-claims", verifyFirebaseToken, async (req: Authenticated
   try {
     const uid = req.user!.uid;
     const synced = await ensureAuthenticatedClaim(uid);
-    res.json({ success: true, uid, synced });
+    if (!synced) {
+      return res.status(503).json({
+        success: false,
+        error: "CLAIMS_SYNC_UNAVAILABLE",
+        message: "Firebase Admin credentials unavailable to sync claims.",
+        uid,
+        synced: false,
+      });
+    }
+    return res.json({ success: true, uid, synced: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to sync user claims", details: err?.message });
+    return res.status(500).json({ error: "Failed to sync user claims", details: err?.message });
   }
 });
 

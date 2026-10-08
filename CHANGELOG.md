@@ -3,6 +3,19 @@
 All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
+### Security & Architectural Hardening (Audit Implementations - Phase 2)
+- **Token Force-Refresh & Claims Fail-Closed (`useCloudStateBridge.ts`, `server.ts`)**:
+  - Implemented `firebaseUser.getIdToken(true)` after `/api/auth/sync-claims` confirms `synced: true`, ensuring the browser's cryptographic JWT actively reflects the server-assigned `role: 'authenticated'` custom claim.
+  - Hardened `/api/auth/sync-claims` to fail-closed with HTTP 503 if Firebase Admin credentials are unavailable.
+- **Dynamic Payment RPC Overload Cleanup & Search Path (`database/migrations/005_...`)**:
+  - Created migration `005` dynamically dropping all legacy `fulfill_pending_payment` function overloads from `pg_proc`.
+  - Recreated the canonical `fulfill_pending_payment` with explicit `set search_path = public`, eliminating the Supabase Security Advisor warning.
+- **Row-Level Security Policies for 6 Flagged Tables & Security Invoker Views**:
+  - Configured explicit RLS policies for `pendingPayments`, `transactions`, `escrowTransactions`, `stripe_events` (server-authoritative with owner read), and `notifications` & `webrtcRooms` (participant access).
+  - Converted legacy `escrow_transactions` and `webrtc_rooms` views to `with (security_invoker = true)` to clear Security Advisor errors.
+- **Supabase Client Clean Architecture (`src/lib/supabase.ts`)**:
+  - Completely decommissioned internal `rest.headers.Authorization` mutation, relying exclusively on the official `accessToken` async callback.
+
 ### Security & Architectural Hardening (Audit Implementations)
 - **Schema Normalization & Bidirectional Field Sync (`database/migrations/004_...`, `useCloudStateBridge.ts`)**:
   - Added PostgreSQL migration `004` providing bidirectional synchronization triggers between legacy snake_case (`sender_id`, `receiver_id`, `host_id`, `attendee_id`) and camelCase (`senderId`, `recipientId`, `mentorId`, `learnerId`).

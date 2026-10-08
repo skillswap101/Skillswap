@@ -507,14 +507,26 @@ export function useCloudStateBridge(): CloudStateBridgeResult {
 
     const fetchData = async () => {
       try {
-        const token = await firebaseUser.getIdToken().catch(() => null);
+        let token = await firebaseUser.getIdToken().catch(() => null);
         if (token) {
+          try {
+            const syncRes = await fetch('/api/auth/sync-claims', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (syncRes.ok) {
+              const syncData = await syncRes.json();
+              if (syncData?.synced) {
+                // Force-refresh Firebase ID token so the cryptographic JWT contains the updated role: 'authenticated' claim
+                token = await firebaseUser.getIdToken(true);
+              }
+            } else {
+              console.warn('[CloudBridge] Notice: Claims sync response status:', syncRes.status);
+            }
+          } catch (syncErr) {
+            console.warn('[CloudBridge] Claims sync notice:', syncErr);
+          }
           setSupabaseAuthToken(token);
-          // Sync custom claims with server upon authentication for Third-Party Auth RLS
-          fetch('/api/auth/sync-claims', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          }).catch(() => {});
         }
 
         // Fetch User Profile

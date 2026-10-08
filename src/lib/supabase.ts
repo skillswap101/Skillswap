@@ -49,22 +49,11 @@ export const supabase = isSupabaseConfigured()
     }));
 
 /**
- * Attaches the Firebase JWT token to the client's Authorization header
- * Preserved for backward compatibility while accessToken callback provides automatic refresh.
+ * Preserved for backward compatibility.
+ * Automatic token acquisition and refresh is handled by the official accessToken callback in createClient.
  */
-export function setSupabaseAuthToken(token: string | null) {
-  if (!isSupabaseConfigured()) return;
-  try {
-    const headers = (supabase as any)?.rest?.headers;
-    if (!headers) return;
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    } else {
-      delete headers.Authorization;
-    }
-  } catch (e) {
-    console.warn('[Supabase] Failed to update auth header:', e);
-  }
+export function setSupabaseAuthToken(_token: string | null): void {
+  // Handled authoritatively by createClient({ accessToken })
 }
 
 export default supabase;
