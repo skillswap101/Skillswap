@@ -91,21 +91,31 @@ export const CallActionModal: React.FC<CallActionModalProps> = ({
     setEscrowTx(tx);
     setIsEscrowReleased(false);
 
-    // Start WebRTC connection
-    webRTCManager.startCall({
-      video: callType === 'video',
-      audio: true,
-      peerName,
-      peerAvatar,
-      skillTitle,
-    }).then(({ localStream, remoteStream }) => {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStream;
+    // Start WebRTC connection with room signaling and TURN
+    const initCall = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken().catch(() => null);
+        const { localStream, remoteStream } = await webRTCManager.startCall({
+          roomId: `call_${proposalId}`,
+          currentUserId: currentUser.id,
+          video: callType === 'video',
+          audio: true,
+          peerName,
+          peerAvatar,
+          skillTitle,
+          token,
+        });
+        if (localVideoRef.current && localStream) {
+          localVideoRef.current.srcObject = localStream;
+        }
+        if (remoteVideoRef.current && remoteStream) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+      } catch (err) {
+        console.warn('[CallActionModal] Call start note:', err);
       }
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStream;
-      }
-    });
+    };
+    initCall();
 
     const unsubscribe = webRTCManager.subscribe((event, payload) => {
       if (event === 'quality-update') {
