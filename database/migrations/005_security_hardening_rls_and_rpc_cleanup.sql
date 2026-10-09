@@ -85,13 +85,14 @@ select * from public."webrtcRooms";
 
 
 -- 4. Row Level Security Policies for the 6 Flagged Tables
+-- Helper: Matches authenticated Firebase UID (text) with table columns without uuid type mismatch
 -- A. pendingPayments (Owner SELECT, Server full access)
 alter table public."pendingPayments" enable row level security;
 drop policy if exists "pending_payments_select_owner" on public."pendingPayments";
 drop policy if exists "pending_payments_service_role" on public."pendingPayments";
 
 create policy "pending_payments_select_owner" on public."pendingPayments"
-  for select using (auth.uid() = "userId");
+  for select using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "userId");
 
 create policy "pending_payments_service_role" on public."pendingPayments"
   for all to service_role using (true) with check (true);
@@ -102,7 +103,7 @@ drop policy if exists "transactions_select_owner" on public.transactions;
 drop policy if exists "transactions_service_role" on public.transactions;
 
 create policy "transactions_select_owner" on public.transactions
-  for select using (auth.uid() = "userId");
+  for select using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "userId");
 
 create policy "transactions_service_role" on public.transactions
   for all to service_role using (true) with check (true);
@@ -113,7 +114,10 @@ drop policy if exists "escrow_select_participant" on public."escrowTransactions"
 drop policy if exists "escrow_service_role" on public."escrowTransactions";
 
 create policy "escrow_select_participant" on public."escrowTransactions"
-  for select using (auth.uid() = "learnerId" or auth.uid() = "mentorId");
+  for select using (
+    coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "learnerId" 
+    or coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "mentorId"
+  );
 
 create policy "escrow_service_role" on public."escrowTransactions"
   for all to service_role using (true) with check (true);
@@ -133,13 +137,14 @@ drop policy if exists "notifications_delete_owner" on public.notifications;
 drop policy if exists "notifications_service_role" on public.notifications;
 
 create policy "notifications_select_owner" on public.notifications
-  for select using (auth.uid() = "recipientUserId");
+  for select using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "recipientUserId");
 
 create policy "notifications_update_owner" on public.notifications
-  for update using (auth.uid() = "recipientUserId") with check (auth.uid() = "recipientUserId");
+  for update using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "recipientUserId")
+  with check (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "recipientUserId");
 
 create policy "notifications_delete_owner" on public.notifications
-  for delete using (auth.uid() = "recipientUserId");
+  for delete using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = "recipientUserId");
 
 create policy "notifications_service_role" on public.notifications
   for all to service_role using (true) with check (true);
@@ -152,13 +157,14 @@ drop policy if exists "webrtc_rooms_update_participant" on public."webrtcRooms";
 drop policy if exists "webrtc_rooms_service_role" on public."webrtcRooms";
 
 create policy "webrtc_rooms_select_participant" on public."webrtcRooms"
-  for select using (auth.uid() = any("participantIds"));
+  for select using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = any("participantIds"));
 
 create policy "webrtc_rooms_insert_participant" on public."webrtcRooms"
-  for insert with check (auth.uid() = any("participantIds"));
+  for insert with check (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = any("participantIds"));
 
 create policy "webrtc_rooms_update_participant" on public."webrtcRooms"
-  for update using (auth.uid() = any("participantIds")) with check (auth.uid() = any("participantIds"));
+  for update using (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = any("participantIds"))
+  with check (coalesce(auth.jwt() ->> 'sub', (auth.uid())::text) = any("participantIds"));
 
 create policy "webrtc_rooms_service_role" on public."webrtcRooms"
   for all to service_role using (true) with check (true);
