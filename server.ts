@@ -367,12 +367,18 @@ app.get("/api/users", async (_req: Request, res: Response) => {
   try {
     const { data: users, error } = await supabase
       .from("users")
-      .select("id, name, email, avatar, title, bio, location, rating, reviewCount, timeCredits, completedSessionsCount, skillsOffered, skillsDesired, badges, createdAt")
+      .select("id, name, email, avatar, title, bio, location, rating, userReviewCount, timeCredits, completedSessionsCount, skillsOffered, skillsDesired, badges, createdAt")
+      .order("createdAt", { ascending: false })
       .limit(100);
     if (error) {
+      console.warn("[server] Notice fetching users:", error.message);
       return res.json([]);
     }
-    return res.json(users || []);
+    const normalized = (users || []).map((u: any) => ({
+      ...u,
+      reviewCount: u.userReviewCount ?? u.reviewCount ?? 0,
+    }));
+    return res.json(normalized);
   } catch (error: any) {
     return res.json([]);
   }
@@ -382,13 +388,16 @@ app.get("/api/users/:id", async (req: Request, res: Response) => {
   try {
     const { data: user, error } = await supabase
       .from("users")
-      .select("id, name, email, avatar, title, bio, location, rating, reviewCount, timeCredits, completedSessionsCount, skillsOffered, skillsDesired, badges, createdAt")
+      .select("id, name, email, avatar, title, bio, location, rating, userReviewCount, timeCredits, completedSessionsCount, skillsOffered, skillsDesired, badges, createdAt")
       .eq("id", req.params.id)
       .maybeSingle();
     if (error || !user) {
       return res.status(404).json({ error: "User not found" });
     }
-    return res.json(user);
+    return res.json({
+      ...user,
+      reviewCount: (user as any).userReviewCount ?? 0,
+    });
   } catch (error: any) {
     return res.status(404).json({ error: "User not found" });
   }

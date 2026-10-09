@@ -3,10 +3,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production';
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const defaultSupabaseUrl = 'https://beekpvtusbijyrzkszwe.supabase.co';
+const defaultAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJlZWtwdnR1c2JpanlyemtzendlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MzQzNTAsImV4cCI6MjEwNTMxMDM1MH0.oOI2wwokNoGYS9-i6sX9AfxDVJ-BdCQIUkRZdFiGTSA';
 
-// Server must only use the privileged service role key, never downgraded to anon
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || defaultSupabaseUrl;
+
+// Server prefers privileged service role key; in local dev fallback to project key
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || (!isProduction ? (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || defaultAnonKey) : '');
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -22,10 +25,10 @@ if (isProduction && !process.env.SUPABASE_SERVICE_ROLE_KEY) {
   console.warn("⚠️ Warning: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in server environment variables!");
 }
 
-// Fallback dummy token format to prevent createClient constructor from throwing at module load time
-const effectiveKey = supabaseKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+// Fallback token to prevent createClient constructor from throwing
+const effectiveKey = supabaseKey || defaultAnonKey;
 
-export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', effectiveKey, {
+export const supabase = createClient(supabaseUrl || defaultSupabaseUrl, effectiveKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
