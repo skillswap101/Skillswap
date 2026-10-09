@@ -3,18 +3,20 @@
  * Tests server health, authentication fail-closed enforcement, rate limiting, and route integrity.
  */
 const http = require('http');
+const https = require('https');
 
 const BASE_URL = process.env.TEST_URL || 'http://127.0.0.1:3000';
 
 function request(path, options = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, BASE_URL);
+    const client = url.protocol === 'https:' ? https : http;
     const reqOptions = {
       method: options.method || 'GET',
       headers: options.headers || {},
     };
 
-    const req = http.request(url, reqOptions, (res) => {
+    const req = client.request(url, reqOptions, (res) => {
       let body = '';
       res.on('data', (chunk) => (body += chunk));
       res.on('end', () => {
