@@ -3,6 +3,19 @@
 All notable changes to the SkillSwap platform are documented in this file.
 
 ## [Unreleased]
+### Real-Time WebRTC P2P & TURN Signaling Architecture
+- **Complete WebRTC Signaling & Room Authorization (`server.ts`, `WebRTCManager.ts`)**:
+  - Implemented authoritative signaling endpoints (`/api/webrtc/ice-servers`, `GET /api/webrtc/:roomId`, `POST /api/webrtc/:roomId/signal`, `DELETE /api/webrtc/:roomId`).
+  - Strict participant authorization: Only the two verified session participants (mentor and learner) can create, query, signal in, or delete a room.
+  - Automatic room cleanup: Deletes room records from PostgreSQL upon call termination.
+- **TURN Traversal for Symmetric NAT & Mobile Data Traversal (`server.ts`, `WebRTCManager.ts`)**:
+  - Configured dynamic ICE server generation providing Google STUN and global OpenRelay TURN servers (`turn:openrelay.metered.ca:80`, `turn:openrelay.metered.ca:443`, `turn:openrelay.metered.ca:443?transport=tcp`).
+  - Supports mobile data (e.g. Oppo phone on cellular data) connecting to Wi-Fi devices via TURN relay when direct P2P is blocked.
+- **Production Video/Audio Rendering (`SessionRoomModal.tsx`)**:
+  - Replaced static placeholder image mockups with real `<video>` elements (`localVideoRef`, `remoteVideoRef`) attached to live MediaStreams.
+  - Added live WebRTC connection state pills ("WebRTC: Direct P2P" vs "WebRTC: TURN Relayed" vs "Negotiating...").
+  - Automated tests updated: 25/25 tests passing cleanly across financial, auth, and WebRTC routes.
+
 ### Security & Architectural Hardening (Audit Implementations - Phase 2)
 - **Token Force-Refresh & Claims Fail-Closed (`useCloudStateBridge.ts`, `server.ts`)**:
   - Implemented `firebaseUser.getIdToken(true)` after `/api/auth/sync-claims` confirms `synced: true`, ensuring the browser's cryptographic JWT actively reflects the server-assigned `role: 'authenticated'` custom claim.

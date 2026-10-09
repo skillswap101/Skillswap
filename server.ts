@@ -552,7 +552,189 @@ app.post("/api/escrow/transfer", verifyFirebaseToken, async (_req: Authenticated
   });
 });
 
-// ===== WebRTC signaling persistence =====
+// ===== WebRTC ICE Servers & TURN Credentials =====
+app.get("/api/webrtc/ice-servers", verifyFirebaseToken, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const customTurnUrl = process.env.TURN_URL || process.env.TURN_SERVER_URL;
+    const customTurnUser = process.env.TURN_USERNAME;
+    const customTurnPass = process.env.TURN_CREDENTIAL || process.env.TURN_PASSWORD;
+
+    const iceServers: RTCIceServer[] = [
+      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] },
+    ];
+
+    if (customTurnUrl && customTurnUser && customTurnPass) {
+      iceServers.push({
+        urls: customTurnUrl.split(",").map(u => u.trim()),
+        username: customTurnUser,
+        credential: customTurnPass,
+      });
+    } else {
+      // Global Open Relay TURN for mobile data / symmetric NAT traversal
+      iceServers.push(
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp",
+          ],
+          username: "openrelay",
+          credential: "openrelay",
+        }
+      );
+    }
+
+    return res.json({ iceServers });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to generate ICE servers" });
+  }
+});
+
+// ===== WebRTC Room Query (Authorized participants only) =====
+app.get("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const roomId = req.params.roomId;
+    const uid = req.user!.uid;
+
+    if (!roomId) {
+      return res.status(400).json({ error: "roomId required" });
+    }
+
+    const { data: room, error } = await supabase
+      .from("webrtcRooms")
+      .select("*")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!room) {
+      return res.status(404).json({ error: "WebRTC room not found" });
+    }
+
+    const participantIds = Array.isArray(room.participantIds) ? room.participantIds : [];
+    if (!participantIds.includes(uid)) {
+      return res.status(403).json({ error: "Unauthorized: You are not a participant in this room" });
+    }
+
+    const rawData = room.raw_data || {};
+    return res.json({
+      ok: true,
+      room: {
+        id: room.id,
+        participantIds,
+        updatedBy: room.updatedBy,
+        updatedAt: room.updatedAt,
+        ...rawData,
+      },
+    });
+  } catch (error) {
+    console.error("WebRTC get room error:", error);
+    return res.status(500).json({ error: "Failed to retrieve WebRTC room" });
+  }
+});
+
+// ===== WebRTC Signaling & State Exchange (Offer, Answer, ICE Candidates) =====
+app.post("/api/webrtc/:roomId/signal", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const roomId = req.params.roomId;
+    const uid = req.user!.uid;
+    const { type, payload, participantIds: reqParticipants } = req.body || {};
+
+    if (!roomId) {
+      return res.status(400).json({ error: "roomId required" });
+    }
+
+    const { data: existing } = await supabase
+      .from("webrtcRooms")
+      .select("*")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    let participantIds: string[] = [];
+    if (existing) {
+      participantIds = Array.isArray(existing.participantIds) ? existing.participantIds : [];
+      if (!participantIds.includes(uid)) {
+        return res.status(403).json({ error: "Unauthorized to signal in this WebRTC room" });
+      }
+    } else {
+      if (!Array.isArray(reqParticipants) || reqParticipants.length !== 2 || !reqParticipants.includes(uid)) {
+        return res.status(403).json({ error: "Room creation requires exactly two valid participant UIDs including caller" });
+      }
+      participantIds = reqParticipants;
+    }
+
+    const existingRaw = existing?.raw_data || {};
+    let updatedRaw = { ...existingRaw };
+
+    if (type === "offer") {
+      updatedRaw.offer = payload;
+      updatedRaw.callerId = uid;
+      updatedRaw.callerCandidates = updatedRaw.callerCandidates || [];
+      updatedRaw.calleeCandidates = [];
+      updatedRaw.answer = null;
+      updatedRaw.status = "calling";
+    } else if (type === "answer") {
+      updatedRaw.answer = payload;
+      updatedRaw.calleeId = uid;
+      updatedRaw.status = "connected";
+    } else if (type === "candidate") {
+      if (payload) {
+        if (uid === updatedRaw.callerId) {
+          const c = updatedRaw.callerCandidates || [];
+          updatedRaw.callerCandidates = [...c, payload];
+        } else {
+          const c = updatedRaw.calleeCandidates || [];
+          updatedRaw.calleeCandidates = [...c, payload];
+        }
+      }
+    } else if (type === "end" || type === "leave") {
+      updatedRaw.status = "ended";
+    }
+
+    const now = new Date().toISOString();
+    await supabase.from("webrtcRooms").upsert({
+      id: roomId,
+      participantIds,
+      updatedBy: uid,
+      raw_data: updatedRaw,
+      updatedAt: now,
+    });
+
+    return res.json({ ok: true, room: { id: roomId, participantIds, ...updatedRaw } });
+  } catch (error) {
+    console.error("WebRTC signaling error:", error);
+    return res.status(500).json({ error: "WebRTC signaling failed" });
+  }
+});
+
+// ===== WebRTC Room Cleanup =====
+app.delete("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const roomId = req.params.roomId;
+    const uid = req.user!.uid;
+
+    const { data: existing } = await supabase
+      .from("webrtcRooms")
+      .select("participantIds")
+      .eq("id", roomId)
+      .maybeSingle();
+
+    if (existing) {
+      const participantIds = Array.isArray(existing.participantIds) ? existing.participantIds : [];
+      if (!participantIds.includes(uid)) {
+        return res.status(403).json({ error: "Unauthorized to delete this WebRTC room" });
+      }
+      await supabase.from("webrtcRooms").delete().eq("id", roomId);
+    }
+
+    return res.json({ ok: true, message: "WebRTC room deleted" });
+  } catch (error) {
+    console.error("WebRTC room deletion error:", error);
+    return res.status(500).json({ error: "Failed to delete WebRTC room" });
+  }
+});
+
+// Legacy backward-compatible persistence route
 app.post("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const roomId = req.params.roomId;
@@ -573,37 +755,8 @@ app.post("/api/webrtc/:roomId", verifyFirebaseToken, async (req: AuthenticatedRe
       });
     }
 
-    const { data: existing } = await supabase
-      .from("webrtcRooms")
-      .select("*")
-      .eq("id", roomId)
-      .maybeSingle();
-
-    if (existing) {
-      const existingParticipants = Array.isArray(existing.participantIds)
-        ? existing.participantIds
-        : [];
-
-      if (existingParticipants.length !== 2 || !existingParticipants.includes(uid)) {
-        return res.status(403).json({
-          error: "Not authorized to modify this WebRTC room",
-        });
-      }
-
-      if (
-        existingParticipants.some(
-          (participant: unknown) => !participantIds.includes(participant as string)
-        )
-      ) {
-        return res.status(403).json({
-          error: "WebRTC participant list cannot be changed",
-        });
-      }
-    }
-
     await supabase.from("webrtcRooms").upsert({
       id: roomId,
-      ...body,
       participantIds,
       updatedBy: uid,
       raw_data: body,

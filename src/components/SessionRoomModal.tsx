@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Video, 
@@ -19,9 +19,13 @@ import {
   Wand2,
   CheckCircle2,
   Disc,
-  Download
+  Download,
+  Wifi,
+  PhoneOff
 } from 'lucide-react';
 import { Session, User } from '../types';
+import { auth } from '../firebase';
+import { webRTCManager, type ConnectionState } from '../utils/WebRTCManager';
 
 interface SessionRoomModalProps {
   session: Session | null;
@@ -44,6 +48,92 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'agenda' | 'notes' | 'aiRoadmap' | 'codeEditor' | 'whiteboard'>('codeEditor');
+
+  // WebRTC Video Refs & Connection State
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [hasRemoteMedia, setHasRemoteMedia] = useState<boolean>(false);
+  const [rtcConnectionState, setRtcConnectionState] = useState<ConnectionState>('new');
+  const [isRelayedTurn, setIsRelayedTurn] = useState<boolean>(false);
+
+  // Initialize WebRTC Call & Signaling
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    const initWebRTC = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        const peerId = currentUser.id === session.mentorId ? session.learnerId : session.mentorId;
+        const peerName = currentUser.id === session.mentorId ? session.learnerName : session.mentorName;
+
+        const unregister = webRTCManager.subscribe((event, payload) => {
+          if (!active) return;
+          if (event === 'local-stream' && localVideoRef.current && payload?.stream) {
+            localVideoRef.current.srcObject = payload.stream;
+          } else if (event === 'remote-stream' && remoteVideoRef.current && payload?.stream) {
+            remoteVideoRef.current.srcObject = payload.stream;
+            setHasRemoteMedia(true);
+          } else if (event === 'connection-state') {
+            setRtcConnectionState(payload?.state || 'connecting');
+            setIsRelayedTurn(webRTCManager.isTurnRelayed);
+          }
+        });
+
+        const { localStream, remoteStream } = await webRTCManager.startCall({
+          roomId: `room_${session.id}`,
+          currentUserId: currentUser.id,
+          peerUserId: peerId,
+          peerName,
+          video: true,
+          audio: true,
+          token,
+        });
+
+        if (localVideoRef.current && localStream) {
+          localVideoRef.current.srcObject = localStream;
+        }
+        if (remoteVideoRef.current && remoteStream) {
+          remoteVideoRef.current.srcObject = remoteStream;
+          setHasRemoteMedia(true);
+        }
+
+        return unregister;
+      } catch (e) {
+        console.warn('[SessionRoomModal] WebRTC initialization note:', e);
+      }
+    };
+
+    const cleanupPromise = initWebRTC();
+
+    return () => {
+      active = false;
+      cleanupPromise.then((unreg) => unreg && unreg());
+      webRTCManager.endCall();
+    };
+  }, [session?.id]);
+
+  const handleToggleMic = () => {
+    const next = !isMicOn;
+    setIsMicOn(next);
+    webRTCManager.toggleAudio(next);
+  };
+
+  const handleToggleVideo = () => {
+    const next = !isVideoOn;
+    setIsVideoOn(next);
+    webRTCManager.toggleVideo(next);
+  };
+
+  const handleToggleScreenShare = async () => {
+    const active = await webRTCManager.toggleScreenShare();
+    setIsScreenSharing(active);
+  };
+
+  const isMentor = session ? currentUser.id === session.mentorId : false;
+  const peerName = session ? (isMentor ? session.learnerName : session.mentorName) : '';
+  const peerRole = isMentor ? 'Learner' : 'Mentor';
+  const myRole = isMentor ? 'Mentor' : 'Learner';
 
   // Shared Code Editor State
   const [codeLanguage, setCodeLanguage] = useState<'typescript' | 'python' | 'javascript' | 'html'>('typescript');
@@ -174,6 +264,28 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Live WebRTC Connection Quality & Traversal Pill */}
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-semibold">
+              {rtcConnectionState === 'connected' ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-emerald-300 font-mono">
+                    {isRelayedTurn ? 'WebRTC: TURN Relayed' : 'WebRTC: Direct P2P'}
+                  </span>
+                </>
+              ) : rtcConnectionState === 'connecting' ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  <span className="text-amber-300 font-mono">WebRTC: Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-slate-500"></span>
+                  <span className="text-slate-400 font-mono">WebRTC: Standby</span>
+                </>
+              )}
+            </div>
+
             {/* Live Escrow Credit Settlement Ticker Pill */}
             <div className="hidden md:flex items-center gap-2 bg-indigo-950/80 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-indigo-300 shadow-inner">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
@@ -195,14 +307,20 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
             </div>
 
             <button
-              onClick={() => setShowCompletionModal(true)}
+              onClick={() => {
+                webRTCManager.endCall();
+                setShowCompletionModal(true);
+              }}
               className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-95"
             >
               Finish & Rate
             </button>
 
             <button
-              onClick={onClose}
+              onClick={() => {
+                webRTCManager.endCall();
+                onClose();
+              }}
               className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
@@ -219,41 +337,56 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
             {/* Video Feed Containers */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-[300px]">
               
-              {/* Feed 1: Mentor Feed */}
+              {/* Feed 1: Remote Peer Feed */}
               <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex items-center justify-center group shadow-md">
-                {isVideoOn ? (
-                  <img
-                    src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80"
-                    alt="Mentor Feed"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center space-y-2 text-slate-500">
-                    <VideoOff className="w-10 h-10" />
-                    <span className="text-xs font-medium">Camera Off</span>
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className={`w-full h-full object-cover ${hasRemoteMedia ? 'block' : 'hidden'}`}
+                />
+                {!hasRemoteMedia && (
+                  <div className="flex flex-col items-center space-y-3 p-4 text-center">
+                    <div className="relative">
+                      <div className="w-16 h-16 rounded-full bg-indigo-950 border border-indigo-500/40 flex items-center justify-center text-indigo-300 font-bold text-xl">
+                        {peerName ? peerName.charAt(0) : 'P'}
+                      </div>
+                      <div className="absolute -inset-1 rounded-full border-2 border-indigo-500/30 animate-ping"></div>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">{peerName || 'Connecting Peer'} ({peerRole})</h4>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {rtcConnectionState === 'connecting'
+                          ? 'Negotiating WebRTC stream & ICE...'
+                          : rtcConnectionState === 'connected'
+                          ? 'Waiting for remote video frames...'
+                          : 'Waiting for peer to connect...'}
+                      </p>
+                    </div>
                   </div>
                 )}
                 <div className="absolute bottom-3 left-3 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-lg border border-slate-800 text-xs font-bold text-indigo-300">
-                  {session.mentorName} (Mentor)
+                  {peerName} ({peerRole})
                 </div>
               </div>
 
-              {/* Feed 2: Learner / Me Feed */}
+              {/* Feed 2: Local Video Feed */}
               <div className="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex items-center justify-center group shadow-md">
-                {isVideoOn ? (
-                  <img
-                    src={currentUser.avatar}
-                    alt="Learner Feed"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${isVideoOn ? 'block' : 'hidden'}`}
+                />
+                {!isVideoOn && (
                   <div className="flex flex-col items-center space-y-2 text-slate-500">
                     <VideoOff className="w-10 h-10" />
-                    <span className="text-xs font-medium">Camera Off</span>
+                    <span className="text-xs font-medium">Camera Muted</span>
                   </div>
                 )}
                 <div className="absolute bottom-3 left-3 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-lg border border-slate-800 text-xs font-bold text-purple-300">
-                  {currentUser.name} (You)
+                  {currentUser.name} (You - {myRole})
                 </div>
               </div>
 
@@ -262,29 +395,29 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
             {/* Video Controls Dock */}
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-center gap-3 shrink-0 flex-wrap">
               <button
-                onClick={() => setIsMicOn(!isMicOn)}
+                onClick={handleToggleMic}
                 className={`p-3 rounded-xl border transition-colors ${
-                  isMicOn ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-rose-950/80 border-rose-800 text-rose-300'
+                  isMicOn ? 'bg-slate-800 border-slate-700 text-slate-200 hover:border-slate-600' : 'bg-rose-950/80 border-rose-800 text-rose-300'
                 }`}
-                title="Toggle Microphone"
+                title={isMicOn ? 'Mute Microphone' : 'Unmute Microphone'}
               >
                 {isMicOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
               </button>
 
               <button
-                onClick={() => setIsVideoOn(!isVideoOn)}
+                onClick={handleToggleVideo}
                 className={`p-3 rounded-xl border transition-colors ${
-                  isVideoOn ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-rose-950/80 border-rose-800 text-rose-300'
+                  isVideoOn ? 'bg-slate-800 border-slate-700 text-slate-200 hover:border-slate-600' : 'bg-rose-950/80 border-rose-800 text-rose-300'
                 }`}
-                title="Toggle Camera"
+                title={isVideoOn ? 'Disable Camera' : 'Enable Camera'}
               >
                 {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
               </button>
 
               <button
-                onClick={() => setIsScreenSharing(!isScreenSharing)}
+                onClick={handleToggleScreenShare}
                 className={`p-3 rounded-xl border transition-colors ${
-                  isScreenSharing ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-200'
+                  isScreenSharing ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-200 hover:border-slate-600'
                 }`}
                 title="Share Screen"
               >
@@ -313,10 +446,14 @@ export const SessionRoomModal: React.FC<SessionRoomModalProps> = ({
               </button>
 
               <button
-                onClick={() => setShowCompletionModal(true)}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all"
+                onClick={() => {
+                  webRTCManager.endCall();
+                  setShowCompletionModal(true);
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5"
               >
-                End Session
+                <PhoneOff className="w-4 h-4" />
+                <span>End Call</span>
               </button>
             </div>
 

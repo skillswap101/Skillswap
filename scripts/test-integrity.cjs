@@ -170,6 +170,31 @@ async function runTests() {
     if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
   });
 
+  // 6. WebRTC Signaling & TURN Authorization
+  await test('GET /api/webrtc/ice-servers rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/webrtc/ice-servers');
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
+  await test('GET /api/webrtc/:roomId rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/webrtc/room_test_123');
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
+  await test('POST /api/webrtc/:roomId/signal rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/webrtc/room_test_123/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { type: 'offer', payload: {} },
+    });
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
+  await test('DELETE /api/webrtc/:roomId rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/webrtc/room_test_123', { method: 'DELETE' });
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
   console.log(`\nResults: ${passed} passed, ${failed} failed.\n`);
   if (failed > 0) {
     process.exit(1);
