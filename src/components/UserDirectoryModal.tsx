@@ -57,8 +57,18 @@ export const UserDirectoryModal: React.FC<UserDirectoryModalProps> = ({
         console.warn('[UserDirectory] Supabase fetch notice:', error.message);
       }
 
-      if (data && data.length > 0) {
-        const dbUsers: User[] = data.map((row: any) => ({
+      let userRows = data;
+      if (!userRows || userRows.length === 0) {
+        try {
+          const apiRes = await fetch('/api/users');
+          if (apiRes.ok) {
+            userRows = await apiRes.json();
+          }
+        } catch {}
+      }
+
+      if (userRows && userRows.length > 0) {
+        const dbUsers: User[] = userRows.map((row: any) => ({
           id: row.id,
           name: row.name || 'Anonymous Member',
           email: row.email,

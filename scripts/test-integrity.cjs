@@ -170,6 +170,15 @@ async function runTests() {
     if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
   });
 
+  await test('POST /api/users/sync rejects unauthenticated requests (401)', async () => {
+    const res = await request('/api/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { name: 'Test User' },
+    });
+    if (res.status !== 401) throw new Error(`Expected 401, got ${res.status}`);
+  });
+
   // 6. WebRTC Signaling & TURN Authorization
   await test('GET /api/webrtc/ice-servers rejects unauthenticated requests (401)', async () => {
     const res = await request('/api/webrtc/ice-servers');

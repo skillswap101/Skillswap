@@ -137,7 +137,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { error: insertErr } = await supabase.from("users").upsert(payload);
         if (insertErr) {
-          console.warn("[AuthContext] Supabase user upsert notice:", insertErr.message);
+          console.warn("[AuthContext] Direct user upsert notice:", insertErr.message);
+          // Backend sync fallback: Guarantees user row is created even if client RLS prevented direct upsert
+          try {
+            const token = await fbUser.getIdToken();
+            if (token) {
+              const res = await fetch("/api/users/sync", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(payload),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (data.user) {
+                  return { ...baseProfile, ...data.user };
+                }
+              }
+            }
+          } catch (syncErr) {
+            console.warn("[AuthContext] Backend sync fallback notice:", syncErr);
+          }
         }
 
         return baseProfile;

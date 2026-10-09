@@ -237,6 +237,38 @@ app.post("/api/auth/sync-claims", verifyFirebaseToken, async (req: Authenticated
   try {
     const uid = req.user!.uid;
     const synced = await ensureAuthenticatedClaim(uid);
+
+    // Guarantee that the user record exists in public.users
+    try {
+      const { data: existingUser } = await supabase.from("users").select("id").eq("id", uid).maybeSingle();
+      if (!existingUser) {
+        const email = req.user?.email || "";
+        const name = req.user?.name || email.split("@")[0] || "SkillSwap Member";
+        await supabase.from("users").upsert({
+          id: uid,
+          name,
+          email,
+          avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`,
+          title: "SkillSwap Community Member",
+          bio: "Passionate about peer-to-peer knowledge exchange and collaborative learning.",
+          location: "Global Remote",
+          rating: 5.0,
+          timeCredits: 5.0,
+          escrowLockedCredits: 0,
+          completedSessionsCount: 0,
+          userReviewCount: 0,
+          badges: ["Community Member"],
+          skillsOffered: ["Peer Mentoring"],
+          skillsDesired: ["Coding", "Design"],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          raw_data: { id: uid, name, email },
+        });
+      }
+    } catch (profileErr) {
+      console.warn("[server] Notice ensuring user record in sync-claims:", profileErr);
+    }
+
     if (!synced) {
       return res.status(503).json({
         success: false,
@@ -253,6 +285,84 @@ app.post("/api/auth/sync-claims", verifyFirebaseToken, async (req: Authenticated
 });
 
 // ===== REST API Endpoints: Users =====
+app.post("/api/users/sync", verifyFirebaseToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const body = req.body || {};
+
+    const { data: existing } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (existing) {
+      return res.json({ ok: true, user: existing });
+    }
+
+    const email = req.user?.email || body.email || "";
+    const name = body.name || req.user?.name || email.split("@")[0] || "SkillSwap Member";
+    const avatar = body.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${uid}`;
+    const title = body.title || "SkillSwap Community Member";
+    const bio = body.bio || "Passionate about peer-to-peer knowledge exchange and collaborative learning.";
+    const location = body.location || "Global Remote";
+    const skillsOffered = Array.isArray(body.skillsOffered) && body.skillsOffered.length > 0 ? body.skillsOffered : ["Peer Mentoring"];
+    const skillsDesired = Array.isArray(body.skillsDesired) ? body.skillsDesired : ["Coding", "Design"];
+    const badges = Array.isArray(body.badges) ? body.badges : ["Early Pioneer", "Community Member"];
+
+    const newProfile = {
+      id: uid,
+      name,
+      email,
+      avatar,
+      title,
+      bio,
+      location,
+      rating: 5.0,
+      timeCredits: 5.0,
+      escrowLockedCredits: 0,
+      completedSessionsCount: 0,
+      userReviewCount: 0,
+      badges,
+      skillsOffered,
+      skillsDesired,
+      joinedDate: "Recently",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      raw_data: {
+        id: uid,
+        name,
+        email,
+        avatar,
+        title,
+        bio,
+        location,
+        rating: 5.0,
+        timeCredits: 5.0,
+        skillsOffered,
+        skillsDesired,
+        badges,
+      },
+    };
+
+    const { data: created, error } = await supabase
+      .from("users")
+      .upsert(newProfile)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error("[server] Failed to upsert user profile:", error);
+      return res.status(500).json({ error: "Failed to persist user profile" });
+    }
+
+    return res.json({ ok: true, user: created || newProfile });
+  } catch (err: any) {
+    console.error("[server] User profile sync error:", err);
+    return res.status(500).json({ error: "User sync failed" });
+  }
+});
+
 app.get("/api/users", async (_req: Request, res: Response) => {
   try {
     const { data: users, error } = await supabase
